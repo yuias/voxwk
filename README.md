@@ -3,7 +3,7 @@
 An Android app that translates speech on the device. Its main use is for Japanese speakers abroad: speech in other
 languages is translated into Japanese offline, spoken aloud, and optionally shown on MemoMind Glass.
 
-Status: early development. Nothing is buildable yet.
+Status: early development. The app itself is not buildable yet; `poc/glass-spp/` is a buildable hardware test.
 
 ## Repository layout
 
