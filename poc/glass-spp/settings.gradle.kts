@@ -30,4 +30,4 @@ plugins {
 }
 
 rootProject.name = "glass-spp-poc"
-include(":gm")
+include(":gm", ":app")
