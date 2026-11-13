@@ -5,3 +5,9 @@
 /third_party/plugin-open-platform/
 
 .DS_Store
+
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+local.properties
