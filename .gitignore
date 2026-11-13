@@ -1,0 +1,7 @@
+# Local working notes and Claude Code state
+.claude/
+
+# MemoMind SDK checkout (proprietary licence; not redistributable)
+/third_party/plugin-open-platform/
+
+.DS_Store
