@@ -174,13 +174,13 @@ def main():
         with socket.socket() as s:
             s.bind(('127.0.0.1', 0))
             args.port = s.getsockname()[1]
-    server = Server(args.model, args.tokenizer, args.port, args.threads, args.budget_factor)
     # Keyed by model hash, tokenizer and dataset directory, so hypotheses never mix across any of them.
     data_key = hashlib.sha256(str(args.data.resolve()).encode()).hexdigest()[:8]
     suffix = '' if args.budget_factor == 3 else f'-b{args.budget_factor}'
     cache_dir = OUT / 'hyp' / f'{args.model.stem}-{mid[:12]}-{args.tokenizer}-{args.data.name}-{data_key}{suffix}'
     cache_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    server = Server(args.model, args.tokenizer, args.port, args.threads, args.budget_factor)
     try:
         texts = {}
         for src, tgt in pairs:
