@@ -41,7 +41,8 @@ def prompt(text, tgt):
 
 
 class Server:
-    def __init__(self, model, tokenizer, port, threads):
+    def __init__(self, model, tokenizer, port, threads, budget_factor=3):
+        self.budget_factor = budget_factor
         cmd = ['llama-server', '-m', str(model), '-c', str(N_CTX), '-ngl', '0', '-np', '1', '--no-warmup',
                '--port', str(port)]
         if threads:
@@ -75,7 +76,7 @@ class Server:
         ids = self.tokens(prompt(text, tgt), special=True)
         if len(ids) > N_CTX - MIN_GEN_ROOM:
             return {'hyp': '', 'error': 'prompt too long'}
-        budget = min(3 * len(self.tokens(text)) + 32, MAX_NEW_CAP, N_CTX - len(ids))
+        budget = min(self.budget_factor * len(self.tokens(text)) + 32, MAX_NEW_CAP, N_CTX - len(ids))
         t = time.perf_counter()
         # Generation ends at an end-of-generation token or when the model opens the next element (TAG / BOS).
         r = self.post('/completion', {'prompt': ids, 'n_predict': budget, 'temperature': 0, 'cache_prompt': False,
@@ -147,6 +148,8 @@ def main():
     ap.add_argument('--tokenizer', choices=['plamo2', 'native'], default='plamo2',
                     help='plamo2 = the override the app uses; native = the GGUF plamo3 tokenizer')
     ap.add_argument('--data', type=pathlib.Path, default=DATA, help='directory with <code>.jsonl files')
+    ap.add_argument('--budget-factor', type=int, default=3,
+                    help='generation budget = factor x source tokens + 32 (3 = the app today)')
     ap.add_argument('--threads', type=int)
     ap.add_argument('--port', type=int, default=18090)
     ap.add_argument('--cross-script', action='store_true',
@@ -161,10 +164,11 @@ def main():
                 sys.exit(f'unknown language {lang}; known: {", ".join(PFML3)}')
     OUT.mkdir(exist_ok=True)
     mid = model_id(args.model)
-    server = Server(args.model, args.tokenizer, args.port, args.threads)
+    server = Server(args.model, args.tokenizer, args.port, args.threads, args.budget_factor)
     # Keyed by model hash, tokenizer and dataset directory, so hypotheses never mix across any of them.
     data_key = hashlib.sha256(str(args.data.resolve()).encode()).hexdigest()[:8]
-    cache_dir = OUT / 'hyp' / f'{args.model.stem}-{mid[:12]}-{args.tokenizer}-{args.data.name}-{data_key}'
+    suffix = '' if args.budget_factor == 3 else f'-b{args.budget_factor}'
+    cache_dir = OUT / 'hyp' / f'{args.model.stem}-{mid[:12]}-{args.tokenizer}-{args.data.name}-{data_key}{suffix}'
     cache_dir.mkdir(parents=True, exist_ok=True)
     results = []
     try:
@@ -199,7 +203,7 @@ def main():
                       f"budget_hits {res['budget_hits']} ms {res['ms_mean']}{extra}")
     finally:
         server.close()
-    summary = {'model': args.model.name, 'sha256': mid, 'tokenizer': args.tokenizer, 'llama_cpp': server.build,
+    summary = {'model': args.model.name, 'sha256': mid, 'tokenizer': args.tokenizer, 'budget_factor': args.budget_factor, 'llama_cpp': server.build,
                'limit': args.limit, 'results': results}
     stamp = time.strftime('%Y%m%d-%H%M%S')
     (OUT / f'scores-{stamp}.json').write_text(json.dumps(summary, indent=1, ensure_ascii=False))
