@@ -12,6 +12,7 @@ import hashlib
 import json
 import pathlib
 import random
+import socket
 import subprocess
 import sys
 import time
@@ -63,7 +64,12 @@ class Server:
             time.sleep(0.5)
         else:
             sys.exit('llama-server did not become healthy')
-        self.build = json.load(urllib.request.urlopen(self.url + '/props')).get('build_info', 'unknown')
+        # A stale server on the same port answers /health too; make sure this one is ours and serves this model.
+        props = json.load(urllib.request.urlopen(self.url + '/props'))
+        if self.proc.poll() is not None or pathlib.Path(props.get('model_path', '')).resolve() != model.resolve():
+            self.proc.kill()
+            sys.exit('port %d is served by another llama-server (%s)' % (port, props.get('model_path')))
+        self.build = props.get('build_info', 'unknown')
 
     def post(self, path, body):
         req = urllib.request.Request(self.url + path, json.dumps(body).encode(), {'Content-Type': 'application/json'})
@@ -151,7 +157,7 @@ def main():
     ap.add_argument('--budget-factor', type=int, default=3,
                     help='generation budget = factor x source tokens + 32 (3 = the app today)')
     ap.add_argument('--threads', type=int)
-    ap.add_argument('--port', type=int, default=18090)
+    ap.add_argument('--port', type=int, default=0, help='llama-server port (0 = a free port)')
     ap.add_argument('--cross-script', action='store_true',
                     help='for cmn_Hans/cmn_Hant targets also score against the other script reference')
     args = ap.parse_args()
@@ -164,6 +170,10 @@ def main():
                 sys.exit(f'unknown language {lang}; known: {", ".join(PFML3)}')
     OUT.mkdir(exist_ok=True)
     mid = model_id(args.model)
+    if args.port == 0:
+        with socket.socket() as s:
+            s.bind(('127.0.0.1', 0))
+            args.port = s.getsockname()[1]
     server = Server(args.model, args.tokenizer, args.port, args.threads, args.budget_factor)
     # Keyed by model hash, tokenizer and dataset directory, so hypotheses never mix across any of them.
     data_key = hashlib.sha256(str(args.data.resolve()).encode()).hexdigest()[:8]
