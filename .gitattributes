@@ -1,0 +1,17 @@
+* text=auto eol=lf
+
+# Windows scripts need CRLF to run under cmd.exe
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries are committed as normal files (no Git LFS) so a plain clone builds
+*.jar  binary
+*.so   binary
+*.a    binary
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.wav  binary
+*.opus binary
+*.onnx binary
+*.gguf binary
