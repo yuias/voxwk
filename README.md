@@ -28,3 +28,7 @@ not part of this repository. Clone it locally before working on Glass code:
 ```sh
 git clone https://github.com/memomind-open/plugin-open-platform.git third_party/plugin-open-platform
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
