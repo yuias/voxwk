@@ -27,7 +27,7 @@ class EnginesTest {
   }
 
   @Test
-  fun conversationKeepsTheEngineBothDirectionsAgreeOn() {
+  fun conversationKeepsASingleEngineWhenDirectionsAgree() {
     assertEquals(
       setOf(AsrEngine.SENSEVOICE),
       asrEnginesFor(SessionMode.CONVERSATION, null, JA, JA, JaRecognizer.SENSEVOICE),
@@ -39,9 +39,18 @@ class EnginesTest {
   }
 
   @Test
-  fun conversationFallsBackToNemotronWhenDirectionsDiffer() {
+  fun conversationLoadsBothEnginesWhenDirectionsDiffer() {
     val sv = JaRecognizer.SENSEVOICE
-    assertEquals(setOf(AsrEngine.NEMOTRON), asrEnginesFor(SessionMode.CONVERSATION, null, JA, EN, sv))
-    assertEquals(setOf(AsrEngine.NEMOTRON), asrEnginesFor(SessionMode.CONVERSATION, null, EN, JA, sv))
+    val both = setOf(AsrEngine.SENSEVOICE, AsrEngine.NEMOTRON)
+    assertEquals(both, asrEnginesFor(SessionMode.CONVERSATION, null, JA, EN, sv))
+    assertEquals(both, asrEnginesFor(SessionMode.CONVERSATION, null, EN, JA, sv))
+  }
+
+  @Test
+  fun conversationUsesNemotronAloneWhenJapaneseIsNotOnSenseVoice() {
+    assertEquals(
+      setOf(AsrEngine.NEMOTRON),
+      asrEnginesFor(SessionMode.CONVERSATION, null, JA, EN, JaRecognizer.NEMOTRON),
+    )
   }
 }

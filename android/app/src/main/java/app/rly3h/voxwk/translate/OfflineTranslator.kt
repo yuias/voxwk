@@ -13,6 +13,7 @@ import app.rly3h.voxwk.data.Models
 import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.lang.AsrEngine
 import app.rly3h.voxwk.lang.Language
+import app.rly3h.voxwk.lang.asrEngineFor
 import app.rly3h.voxwk.lang.listenSkips
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -59,6 +60,13 @@ private class DirectedChunk(val pcm: ByteArray, val speaker: Speaker)
 /** A finalized streaming transcript tagged with the direction it was spoken in. */
 private class DirectedText(val text: String, val speaker: Speaker)
 
+/** What the mixed Conversation's recognizers hand to its worker. */
+private sealed interface Utterance {
+  class Segment(val pcm: ByteArray, val speaker: Speaker) : Utterance
+
+  class Text(val text: String, val speaker: Speaker) : Utterance
+}
+
 /**
  * The on-device pipeline: continuous capture → (Silero VAD segments | streaming
  * recognizer) → SenseVoice/Nemotron ASR → GGUF translation (llama.cpp) → OS TTS.
@@ -81,14 +89,15 @@ internal class OfflineTranslator(
   private val mtPath = modelFile(context, settings.mtModel.modelId).absolutePath
   private val vadDir = Models.dir(context, "vad")
 
-  // One recognizer per session, chosen by the same function as the start-time model check.
-  private val asrEngine: AsrEngine = asrEnginesFor(
+  // Chosen by the same function as the start-time model check. Listen has one recognizer;
+  // a Conversation has two when its directions use different ones.
+  private val asrEngines: Set<AsrEngine> = asrEnginesFor(
     if (conversation != null) SessionMode.CONVERSATION else SessionMode.LISTEN,
     source,
     conversation?.mine ?: target,
     conversation?.partner ?: target,
     settings.jaRecognizer,
-  ).single()
+  )
 
   private val running = AtomicBoolean(false)
 
@@ -109,7 +118,7 @@ internal class OfflineTranslator(
     running.set(true)
     scope.launch {
       try {
-        withContext(Dispatchers.IO) { releaseUnusedEngines(setOf(asrEngine)) }
+        withContext(Dispatchers.IO) { releaseUnusedEngines(asrEngines) }
         // Overlaps the weight load with the first utterance. Translation takes the
         // same engine mutex, so it is correct even if this hasn't finished yet.
         mtLoadJob = scope.launch(Dispatchers.IO) {
@@ -125,10 +134,12 @@ internal class OfflineTranslator(
         }
         if (!running.get()) mtLoadJob?.cancel() // stop() raced the launch
         val conv = conversation
-        when (asrEngine) {
-          AsrEngine.NEMOTRON ->
+        val engine = asrEngines.singleOrNull()
+        when {
+          conv != null && engine == null -> runMixedConversation(callbacks, conv)
+          engine == AsrEngine.NEMOTRON ->
             if (conv == null) runStreaming(callbacks) else runStreamingConversation(callbacks, conv)
-          AsrEngine.SENSEVOICE ->
+          else ->
             if (conv == null) runSegmented(callbacks) else runSegmentedConversation(callbacks, conv)
         }
         callbacks.onFinished(null)
@@ -213,18 +224,27 @@ internal class OfflineTranslator(
     finalizeTurn(transcript, asr.lang, cb, speaker)
   }
 
+  private suspend fun loadVad() = withContext(Dispatchers.IO) {
+    val vad = settings.vad // latest knobs at the start of this session
+    val vadPath = vadDir.absolutePath
+    Models.ensure(context, "vad")
+    vadLoad(vadPath, vad.threshold, vad.minSilenceMs / 1000f, vad.minSpeechMs / 1000f, vad.maxSpeechMs / 1000f)
+    vadReset(vadPath)
+  }
+
+  private suspend fun loadStream() = withContext(Dispatchers.IO) {
+    val ep = settings.endpoint // latest knobs at the start of this session
+    asrStreamLoad(streamDir.absolutePath, ep.rule1, ep.rule2, ep.rule3, "auto")
+    asrStreamReset(streamDir.absolutePath)
+  }
+
   // Capture and processing are decoupled by a channel so recording keeps running
   // while each finished segment is transcribed/translated. Raw ~100 ms chunks are
   // fed to the resident Silero VAD, which emits a clean PCM segment per detected
   // utterance; on stop we flush whatever was mid-sentence.
   private suspend fun runSegmented(cb: TranslatorCallbacks) = coroutineScope {
-    val vad = settings.vad // latest knobs at the start of this session
     val vadPath = vadDir.absolutePath
-    withContext(Dispatchers.IO) {
-      Models.ensure(context, "vad")
-      vadLoad(vadPath, vad.threshold, vad.minSilenceMs / 1000f, vad.minSpeechMs / 1000f, vad.maxSpeechMs / 1000f)
-      vadReset(vadPath)
-    }
+    loadVad()
     val channel = Channel<ByteArray>(Channel.UNLIMITED)
     val capture = launch(Dispatchers.IO) {
       try {
@@ -255,11 +275,7 @@ internal class OfflineTranslator(
   // Streaming (Nemotron) path: feed raw mic chunks into the online recognizer,
   // show its partial transcript live, and finalize each utterance on its endpoint.
   private suspend fun runStreaming(cb: TranslatorCallbacks) = coroutineScope {
-    val ep = settings.endpoint // latest knobs at the start of this session
-    withContext(Dispatchers.IO) {
-      asrStreamLoad(streamDir.absolutePath, ep.rule1, ep.rule2, ep.rule3, "auto")
-      asrStreamReset(streamDir.absolutePath)
-    }
+    loadStream()
     val channel = Channel<ByteArray>(Channel.UNLIMITED)
     // Endpointed utterances hand off here so translation (blocking, ~1.3s) runs on
     // its own worker instead of inside the ASR loop. Otherwise the loop would stop
@@ -309,13 +325,8 @@ internal class OfflineTranslator(
     cb: TranslatorCallbacks,
     conv: OfflineConversationHooks,
   ) = coroutineScope {
-    val vad = settings.vad
     val vadPath = vadDir.absolutePath
-    withContext(Dispatchers.IO) {
-      Models.ensure(context, "vad")
-      vadLoad(vadPath, vad.threshold, vad.minSilenceMs / 1000f, vad.minSpeechMs / 1000f, vad.maxSpeechMs / 1000f)
-      vadReset(vadPath)
-    }
+    loadVad()
     val channel = Channel<DirectedSegment>(Channel.UNLIMITED)
     val capture = launch(Dispatchers.IO) {
       val gate = ConversationInputGate()
@@ -360,11 +371,7 @@ internal class OfflineTranslator(
     cb: TranslatorCallbacks,
     conv: OfflineConversationHooks,
   ) = coroutineScope {
-    val ep = settings.endpoint
-    withContext(Dispatchers.IO) {
-      asrStreamLoad(streamDir.absolutePath, ep.rule1, ep.rule2, ep.rule3, "auto")
-      asrStreamReset(streamDir.absolutePath)
-    }
+    loadStream()
     val channel = Channel<DirectedChunk>(Channel.UNLIMITED)
     val finalized = Channel<DirectedText>(Channel.UNLIMITED)
     val capture = launch(Dispatchers.IO) {
@@ -424,5 +431,95 @@ internal class OfflineTranslator(
     capture.join()
     consumer.join()
     translator.join() // drain any translations still in flight after Stop
+  }
+
+  // Conversation whose directions use different recognizers: one capture, dispatched per
+  // direction. Recognition and translation run on one worker so turns commit in spoken order
+  // even though the two paths produce them differently.
+  private suspend fun runMixedConversation(
+    cb: TranslatorCallbacks,
+    conv: OfflineConversationHooks,
+  ) = coroutineScope {
+    val vadPath = vadDir.absolutePath
+    val streamPath = streamDir.absolutePath
+    loadVad()
+    loadStream()
+    val chunks = Channel<DirectedChunk>(Channel.UNLIMITED)
+    val utterances = Channel<Utterance>(Channel.UNLIMITED)
+    val capture = launch(Dispatchers.IO) {
+      val gate = ConversationInputGate()
+      try {
+        input.capture(conversationFormat(conv), running) { raw ->
+          val decision = gate.decide(conv.speaking(), conv.gate.speakerBusy)
+          val chunk = if (decision.muted) ByteArray(raw.size) else raw
+          chunks.trySend(DirectedChunk(chunk, decision.active))
+        }
+      } finally {
+        chunks.close()
+      }
+    }
+    val segmentPath = object : SegmentPath {
+      override fun accept(pcm: ByteArray): List<ByteArray> =
+        try {
+          vadAccept(vadPath, pcm, SAMPLE_RATE_16K)
+        } catch (_: Throwable) {
+          emptyList() // drop a bad chunk; keep recording
+        }
+
+      override fun flush(): List<ByteArray> {
+        val rest = runCatching { vadFlush(vadPath) }.getOrDefault(emptyList())
+        runCatching { vadReset(vadPath) }
+        return rest
+      }
+    }
+    val stream = object : StreamPath {
+      override fun accept(pcm: ByteArray): StreamStep {
+        val r = asrStreamAccept(streamPath, pcm, SAMPLE_RATE_16K)
+        return StreamStep(r.text, r.endpoint)
+      }
+
+      override fun reset() = asrStreamReset(streamPath)
+    }
+    val sink = object : DirectionalAsrSink {
+      override suspend fun onSegment(pcm: ByteArray, speaker: Speaker) {
+        utterances.trySend(Utterance.Segment(pcm, speaker))
+      }
+
+      override suspend fun onPartial(text: String) = withContext(Dispatchers.Main) { cb.onPartial(text) }
+
+      override suspend fun onText(text: String, speaker: Speaker) {
+        utterances.trySend(Utterance.Text(text, speaker))
+      }
+
+      override suspend fun onError(e: Throwable) =
+        withContext(Dispatchers.Main) { cb.onStatus(recognitionFailed(e)) }
+    }
+    val dispatcher = DirectionalAsrDispatcher(
+      engineFor = { asrEngineFor(if (it == Speaker.ME) conv.mine else conv.partner, settings.jaRecognizer) },
+      segments = segmentPath,
+      stream = stream,
+      sink = sink,
+    )
+    val consumer = launch(Dispatchers.IO) {
+      for (c in chunks) dispatcher.accept(c.pcm, c.speaker)
+      dispatcher.finish()
+      utterances.close()
+    }
+    // Single worker: sequential so turns commit in spoken order.
+    val worker = launch(Dispatchers.IO) {
+      for (u in utterances) {
+        try {
+          when (u) {
+            is Utterance.Segment -> processSegment(u.pcm, cb, u.speaker)
+            is Utterance.Text -> finalizeTurn(u.text, "", cb, u.speaker)
+          }
+        } catch (e: Throwable) {
+          withContext(Dispatchers.Main) { cb.onStatus(recognitionFailed(e)) }
+        }
+      }
+    }
+    capture.join()
+    consumer.join()
+    worker.join() // drain any translations still in flight after Stop
   }
 }

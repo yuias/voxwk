@@ -18,9 +18,10 @@ internal fun modelFile(context: Context, id: String): File =
   File(Models.dir(context, id), Models.spec(context, id).checkFile)
 
 /**
- * The recognizers an offline session loads: exactly one. Listen follows the source language.
- * The Conversation directions share one engine, so when they would pick different ones both
- * use Nemotron. A set, because model checks and unloading work on sets of engines.
+ * The recognizers an offline session loads. Listen follows the source language, so it
+ * has one. Conversation picks one per direction, so it has two when they differ (ja on
+ * SenseVoice, the partner on Nemotron). A set, because model checks and unloading work
+ * on sets of engines.
  */
 internal fun asrEnginesFor(
   mode: SessionMode,
@@ -30,8 +31,7 @@ internal fun asrEnginesFor(
   ja: JaRecognizer,
 ): Set<AsrEngine> =
   if (mode == SessionMode.CONVERSATION) {
-    val me = asrEngineFor(mine, ja)
-    setOf(if (me == asrEngineFor(partner, ja)) me else AsrEngine.NEMOTRON)
+    setOf(asrEngineFor(mine, ja), asrEngineFor(partner, ja))
   } else {
     setOf(asrEngineFor(listenSource, ja))
   }
