@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Voxwk" parent="android:Theme.Material.NoActionBar" />
+
+    <style name="Theme.Voxwk.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0E1514</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">#006A6A</item>
+        <item name="postSplashScreenTheme">@style/Theme.Voxwk</item>
+    </style>
+</resources>
