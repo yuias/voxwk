@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconToggleButton
@@ -62,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -75,6 +77,7 @@ import app.rly3h.voxwk.lang.OnlineProvider
 import app.rly3h.voxwk.lang.onlineCode
 import app.rly3h.voxwk.translate.EngineStatus
 import app.rly3h.voxwk.translate.LiveTurn
+import app.rly3h.voxwk.translate.PreloadState
 import app.rly3h.voxwk.translate.Speaker
 
 @Composable
@@ -86,6 +89,7 @@ fun NewSessionScreen(modifier: Modifier = Modifier) {
   val vm: NewSessionViewModel = viewModel(viewModelStoreOwner = activity)
   val settings by vm.settings.collectAsStateWithLifecycle()
   val hasKey by vm.hasKey.collectAsStateWithLifecycle()
+  val preload by vm.preload.collectAsStateWithLifecycle()
 
   var hasPermission by remember {
     mutableStateOf(
@@ -293,18 +297,30 @@ fun NewSessionScreen(modifier: Modifier = Modifier) {
         // Mirror the speak toggle's footprint on the left so the mic stays centered.
         Spacer(Modifier.size(48.dp))
         Spacer(Modifier.weight(1f))
-        Surface(
-          onClick = { if (vm.recording) vm.stop() else start() },
-          shape = CircleShape,
-          color = if (vm.recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(72.dp),
-        ) {
-          Box(contentAlignment = Alignment.Center) {
-            Icon(
-              painterResource(if (vm.recording) R.drawable.ic_stop else R.drawable.ic_mic),
-              contentDescription = stringResource(if (vm.recording) R.string.session_stop else R.string.session_start),
-              modifier = Modifier.size(32.dp),
-              tint = if (vm.recording) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+        Box(contentAlignment = Alignment.Center) {
+          Surface(
+            onClick = { if (vm.recording) vm.stop() else start() },
+            shape = CircleShape,
+            color = if (vm.recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(72.dp),
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                painterResource(if (vm.recording) R.drawable.ic_stop else R.drawable.ic_mic),
+                contentDescription = stringResource(if (vm.recording) R.string.session_stop else R.string.session_start),
+                modifier = Modifier.size(32.dp),
+                tint = if (vm.recording) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+              )
+            }
+          }
+          // Models load in the background; starting meanwhile is allowed and just waits for the load.
+          (preload as? PreloadState.Loading)?.takeIf { !vm.recording }?.let { loading ->
+            val label = stringResource(R.string.session_models_loading)
+            CircularProgressIndicator(
+              progress = { loading.done.toFloat() / loading.total },
+              modifier = Modifier.size(72.dp).semantics { contentDescription = label },
+              color = MaterialTheme.colorScheme.onPrimary,
+              trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.3f),
             )
           }
         }

@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.rly3h.voxwk.R
 import app.rly3h.voxwk.RecordingService
+import app.rly3h.voxwk.VoxwkApp
 import app.rly3h.voxwk.audio.AudioRouters
 import app.rly3h.voxwk.audio.PhoneAudioInput
 import app.rly3h.voxwk.audio.listenHasPrivateOutput
@@ -31,6 +32,7 @@ import app.rly3h.voxwk.translate.OfflineConversationTranslator
 import app.rly3h.voxwk.translate.OfflineTranslator
 import app.rly3h.voxwk.translate.OnlineConversationTranslator
 import app.rly3h.voxwk.translate.OpenAiTranslator
+import app.rly3h.voxwk.translate.PreloadState
 import app.rly3h.voxwk.translate.SpeechTranslator
 import app.rly3h.voxwk.translate.TranslatorCallbacks
 import app.rly3h.voxwk.translate.asrEnginesFor
@@ -69,6 +71,9 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
    */
   val settings: StateFlow<AppSettings> =
     repository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+
+  /** Progress of the background model load, shown on the mic button. */
+  val preload: StateFlow<PreloadState> = (app as VoxwkApp).preloader.state
 
   /** Whether a key is stored for the selected provider. */
   @OptIn(ExperimentalCoroutinesApi::class)

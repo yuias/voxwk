@@ -44,6 +44,7 @@
     <string name="session_empty">Tap the mic and start speaking.</string>
     <string name="session_start">Start recording</string>
     <string name="session_stop">Stop</string>
+    <string name="session_models_loading">Loading models</string>
     <string name="session_speak_on">Speak translations aloud</string>
     <string name="session_speak_off">Translations muted</string>
     <string name="session_speaking_button">Speaking (%1$s → %2$s)</string>
