@@ -30,3 +30,4 @@ plugins {
 }
 
 rootProject.name = "voxwk"
+include(":app")
