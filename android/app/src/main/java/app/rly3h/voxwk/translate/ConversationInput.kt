@@ -21,10 +21,9 @@ internal class ConversationInputGate {
 
   /**
    * Speaking ON means the user talks (ME); otherwise the mic is treated as the
-   * partner. Only the partner direction is muted while the speaker is busy: with
-   * no earphones even the partner's translation plays on the speaker, so any
-   * speaker playback must block that direction, while an explicit Speaking press
-   * is never overridden.
+   * partner. Only the partner direction is muted while the speaker is busy: the
+   * partner's translation plays on the phone speaker and would be picked up as
+   * partner speech, while an explicit Speaking press is never overridden.
    */
   fun decide(speaking: Boolean, speakerBusy: Boolean): InputDecision {
     val active = if (speaking) Speaker.ME else Speaker.PARTNER
