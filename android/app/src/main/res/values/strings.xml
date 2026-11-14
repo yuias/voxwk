@@ -70,4 +70,16 @@
     <string name="status_failed_engine">Engine error: %1$s</string>
     <string name="status_unknown_detail">unknown</string>
     <string name="notice_no_earphones">No earphones: your translation is text only.</string>
+
+    <string name="history_empty">No sessions yet. Start a new session to see it here.</string>
+    <string name="history_delete">Delete session</string>
+    <string name="history_not_found">Session not found.</string>
+    <plurals name="history_turns">
+        <item quantity="one">%1$d turn</item>
+        <item quantity="other">%1$d turns</item>
+    </plurals>
+    <string name="history_mode_input">%1$s · %2$s</string>
+    <string name="history_input_phone">Phone microphone</string>
+    <string name="history_input_glasses">Glass microphone</string>
+    <string name="history_turn_heading">%1$s · %2$s</string>
 </resources>
