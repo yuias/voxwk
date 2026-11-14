@@ -1,0 +1,234 @@
+package app.rly3h.voxwk.translate
+
+import android.content.Context
+import android.util.Base64
+import app.rly3h.voxwk.audio.AudioInput
+import app.rly3h.voxwk.audio.CaptureFormat
+import app.rly3h.voxwk.audio.CapturePurpose
+import app.rly3h.voxwk.audio.ONLINE_CHUNK_MS
+import app.rly3h.voxwk.audio.SAMPLE_RATE_24K
+import app.rly3h.voxwk.data.AppSettings
+import app.rly3h.voxwk.lang.Language
+import app.rly3h.voxwk.lang.OnlineProvider
+import app.rly3h.voxwk.lang.onlineCode
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+
+/**
+ * Online engine: OpenAI Realtime speech-to-speech translation over a WebSocket.
+ *
+ * Flow: mint a short-lived ephemeral secret from the user's stored key → open
+ * `wss://.../v1/realtime/translations` → push continuous 24 kHz PCM16 mic audio →
+ * receive source/target transcript deltas (rendered into one turn row) and
+ * translated-audio deltas (played via AudioTrack). The Realtime model detects the
+ * source language itself; we only pin the target ([target], which must be an
+ * OpenAI output language). Mic audio comes from [input]; [apiKey] and [settings]
+ * are the values the caller resolved at session start. [source] only labels the
+ * turns (null = not known up front).
+ */
+internal class OpenAiTranslator(
+  private val context: Context,
+  private val apiKey: String,
+  private val settings: AppSettings,
+  private val target: Language,
+  private val input: AudioInput,
+  private val source: Language? = null,
+  // false: mic audio arrives through feed() from a capture owned by the caller.
+  private val ownCapture: Boolean = true,
+  // non-null: decoded 24 kHz PCM goes here instead of the engine's own RealtimeAudioSink.
+  private val audioOut: ((ByteArray) -> Unit)? = null,
+) : FeedableTranslator {
+  override val inputSampleRate: Int = SAMPLE_RATE_24K
+
+  private val running = AtomicBoolean(false)
+
+  @Volatile private var webSocket: WebSocket? = null
+  @Volatile private var failure: String? = null
+  // Completes true once `session.update` is sent, false on a failed open. Capture
+  // buffers audio until then so it never precedes the session config.
+  private val opened = CompletableDeferred<Boolean>()
+  private val preConnect = PreConnectAudioBuffer(SAMPLE_RATE_24K * 2 * PRE_CONNECT_MS / 1000)
+  private val finished = CompletableDeferred<Unit>()
+
+  // Fixed direction for the session: target language is pinned, source auto-detected.
+  private val targetCode = onlineCode(OnlineProvider.OPENAI, target)
+    ?: throw IllegalArgumentException("OpenAI cannot translate into ${target.code}")
+
+  private val audio = RealtimeAudioSink(
+    autoSpeak = { settings.autoSpeak },
+    outputTypes = { mediaOutputTypes(context) },
+  )
+
+  private val json = Json { ignoreUnknownKeys = true }
+
+  override fun start(scope: CoroutineScope, callbacks: TranslatorCallbacks) {
+    running.set(true)
+    val cb = callbacks
+    val sink = RealtimeTurnAssembler(source, target, cb, onTurnEnd = audio::endTurn)
+    scope.launch(Dispatchers.IO) {
+      try {
+        // Start the mic before minting/connecting so speech during "Connecting…" is
+        // buffered; teardown() stops it if the connect fails.
+        if (ownCapture) launch(Dispatchers.IO) { captureLoop(cb) }
+        cb.onStatus(EngineStatus.Connecting)
+        val ephemeral = OpenAiRealtime.mintEphemeral(apiKey, targetCode)
+        if (!running.get()) { cb.onFinished(null); return@launch } // stopped while minting
+
+        val client = OkHttpClient.Builder()
+          .pingInterval(20, TimeUnit.SECONDS)
+          .readTimeout(0, TimeUnit.MILLISECONDS) // long-lived stream
+          .build()
+        val request = Request.Builder()
+          .url("${OpenAiRealtime.WS_URL}?model=${OpenAiRealtime.MODEL}")
+          .header("Authorization", "Bearer $ephemeral")
+          .header("OpenAI-Safety-Identifier", OpenAiRealtime.SAFETY_ID)
+          .build()
+        webSocket = client.newWebSocket(request, listener(cb, sink))
+
+        val idleGapMs = settings.onlineIdleGapMs.toLong()
+        if (audioOut == null) launch(Dispatchers.IO) { audio.playbackLoop() }
+        launch(Dispatchers.IO) { idleWatchdog(sink, idleGapMs) }
+
+        finished.await()
+        cb.onFinished(failure)
+      } catch (e: Throwable) {
+        cb.onFinished(e.message ?: e.toString())
+      } finally {
+        teardown()
+      }
+    }
+  }
+
+  override fun stop() {
+    if (!running.compareAndSet(true, false)) return
+    runCatching { webSocket?.close(1000, "client stop") }
+    // Give the socket a moment to flush trailing deltas, then unblock start().
+    if (!finished.isCompleted) finished.complete(Unit)
+  }
+
+  // --- WebSocket events ---
+
+  private fun listener(cb: TranslatorCallbacks, sink: RealtimeTurnAssembler) = object : WebSocketListener() {
+    override fun onOpen(ws: WebSocket, response: Response) {
+      // Enabling input transcription is what makes the model emit source-language
+      // (input_transcript) deltas; without it only the translation comes back.
+      ws.send(
+        """{"type":"session.update","session":{"audio":{""" +
+          """"input":{"transcription":{"model":"$INPUT_TRANSCRIBE_MODEL"}},""" +
+          """"output":{"language":"$targetCode"}}}}""",
+      )
+      cb.onStatus(EngineStatus.Listening)
+      if (!opened.isCompleted) opened.complete(true)
+    }
+
+    override fun onMessage(ws: WebSocket, text: String) {
+      handleEvent(text, cb, sink)
+    }
+
+    override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+      sink.finalize()
+      if (!finished.isCompleted) finished.complete(Unit)
+    }
+
+    override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+      if (running.get()) failure = t.message ?: t.toString()
+      if (!opened.isCompleted) opened.complete(false)
+      if (!finished.isCompleted) finished.complete(Unit)
+    }
+  }
+
+  private fun handleEvent(text: String, cb: TranslatorCallbacks, sink: RealtimeTurnAssembler) {
+    val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
+    val type = obj["type"]?.jsonPrimitive?.contentOrNull ?: return
+    when {
+      type == "error" -> {
+        val msg = (obj["error"] as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
+        cb.onStatus(EngineStatus.Failed(EngineStatus.Stage.ENGINE, msg ?: type))
+      }
+      type.contains("input") && type.contains("transcript") && type.endsWith("delta") ->
+        sink.sourceDelta(delta(obj))
+      type.contains("output") && type.contains("transcript") && type.endsWith("delta") ->
+        sink.targetDelta(delta(obj))
+      type.contains("output") && type.contains("audio") && type.endsWith("delta") -> {
+        val out = audioOut
+        if (out == null) audio.enqueueBase64(delta(obj)) else decodePcmBase64(delta(obj))?.let(out)
+      }
+      type.contains("transcript") && type.endsWith("done") -> sink.finalize()
+    }
+  }
+
+  private fun delta(obj: JsonObject): String =
+    obj["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
+
+  // No `*.done` event for a while after the last delta → close the open turn.
+  private suspend fun idleWatchdog(sink: RealtimeTurnAssembler, idleGapMs: Long) {
+    while (running.get()) {
+      kotlinx.coroutines.delay(IDLE_POLL_MS)
+      sink.finalizeIfIdle(idleGapMs)
+    }
+  }
+
+  // --- Audio in (24 kHz PCM16) ---
+
+  private fun captureLoop(cb: TranslatorCallbacks) {
+    try {
+      // The input delivers 24 kHz itself (the phone upsamples when it must).
+      input.capture(CaptureFormat(SAMPLE_RATE_24K, ONLINE_CHUNK_MS, CapturePurpose.COMMUNICATION), running) { chunk ->
+        feed(chunk)
+      }
+    } catch (e: Throwable) {
+      if (running.get()) cb.onStatus(EngineStatus.Failed(EngineStatus.Stage.MIC, e.message))
+    }
+  }
+
+  @OptIn(ExperimentalCoroutinesApi::class)
+  override fun feed(chunk: ByteArray) {
+    if (!running.get()) return
+    val ws = webSocket
+    val gate = if (opened.isCompleted) opened.getCompleted() else null
+    if (gate == false) return // session is ending
+    // `webSocket` is assigned after newWebSocket() returns and can lag onOpen.
+    if (gate == null || ws == null) {
+      preConnect.offer(chunk)
+      return
+    }
+    preConnect.drain().forEach { sendAudio(ws, it) }
+    sendAudio(ws, chunk)
+  }
+
+  private fun sendAudio(ws: WebSocket, pcm24: ByteArray) {
+    // Drop audio rather than build an unbounded send queue on a stalled link.
+    if (ws.queueSize() > MAX_WS_QUEUE_BYTES) return
+    val b64 = Base64.encodeToString(pcm24, Base64.NO_WRAP)
+    ws.send("""{"type":"session.input_audio_buffer.append","audio":"$b64"}""")
+  }
+
+  private fun teardown() {
+    // Capture starts before the socket exists, so a failed connect must stop the mic.
+    running.set(false)
+    audio.close()
+    runCatching { webSocket?.cancel() }
+    webSocket = null
+  }
+
+  private companion object {
+    const val INPUT_TRANSCRIBE_MODEL = "gpt-realtime-whisper"
+    const val MAX_WS_QUEUE_BYTES = 256 * 1024L
+    const val IDLE_POLL_MS = 300L
+  }
+}
