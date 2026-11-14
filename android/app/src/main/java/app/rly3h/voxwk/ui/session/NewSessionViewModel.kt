@@ -21,9 +21,7 @@ import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.data.SessionStore
 import app.rly3h.voxwk.data.SettingsRepository
 import app.rly3h.voxwk.data.requiredModelIds
-import app.rly3h.voxwk.lang.AsrEngine
 import app.rly3h.voxwk.lang.Language
-import app.rly3h.voxwk.lang.asrEngineFor
 import app.rly3h.voxwk.lang.OnlineProvider
 import app.rly3h.voxwk.translate.ConversationTranslator
 import app.rly3h.voxwk.translate.EngineStatus
@@ -35,9 +33,11 @@ import app.rly3h.voxwk.translate.OnlineConversationTranslator
 import app.rly3h.voxwk.translate.OpenAiTranslator
 import app.rly3h.voxwk.translate.SpeechTranslator
 import app.rly3h.voxwk.translate.TranslatorCallbacks
+import app.rly3h.voxwk.translate.asrEnginesFor
 import app.rly3h.voxwk.translate.mediaOutputTypes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -63,7 +63,10 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   private val repository = SettingsRepository(app)
   private val input = PhoneAudioInput(app)
 
-  /** Live settings. Engines get a snapshot taken at [start], so a change here never reaches a running session. */
+  /**
+   * Live settings. Engines get a snapshot taken at [start], so a change here never reaches a
+   * running session, except Mute and Speech rate, which they read through lambdas on this flow.
+   */
   val settings: StateFlow<AppSettings> =
     repository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
@@ -73,8 +76,15 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     .flatMapLatest { repository.hasApiKey(it) }
     .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+  // Both online Conversation directions report persistence concurrently; one thread keeps the file writes ordered.
+  @OptIn(ExperimentalCoroutinesApi::class)
+  private val persistDispatcher = Dispatchers.IO.limitedParallelism(1)
+
   private var startedAt = System.currentTimeMillis()
   private var sessionId = SessionStore.newId(startedAt)
+
+  // The mode the running session began with; the setting may differ by the time a turn is saved.
+  private var sessionMode = SessionMode.LISTEN
 
   val turns = mutableStateListOf<LiveTurn>() // chronological: newest last
   var status by mutableStateOf<SessionStatus?>(null) // null = idle text for the current mode
@@ -87,7 +97,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     private set
 
   /**
-   * The router found no earphones when the session began. Kept apart from [status]: the engines
+   * There is no private output when the session began. Kept apart from [status]: the engines
    * report it once, and any later status would replace it on screen.
    */
   var noEarphones by mutableStateOf(false)
@@ -95,6 +105,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
 
   private var tts: TextToSpeech? = null
   private var translator: SpeechTranslator? = null
+  private var startJob: Job? = null
 
   init {
     tts = TextToSpeech(app) { }
@@ -150,15 +161,17 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   fun start(network: Boolean) {
     if (recording) return
     recording = true // claims the start: the checks below suspend
-    viewModelScope.launch {
+    startJob = viewModelScope.launch {
       val app = getApplication<Application>()
       val s = repository.settings.first()
+      sessionMode = s.sessionMode
       val conversation = s.sessionMode == SessionMode.CONVERSATION
       val mine = s.myLanguage
       // Listen translates into my language and hears the source (Auto = unknown); Conversation does both ways.
       val targets = if (conversation) listOf(mine, s.conversationPartner) else listOf(mine)
       val spoken = if (conversation) targets else listOfNotNull(s.listenSource)
-      val apiKey = repository.apiKey(s.onlineProvider)
+      // Tink/Keystore decryption blocks, and a key is only needed when online is switched on.
+      val apiKey = if (s.onlineEnabled) withContext(Dispatchers.IO) { repository.apiKey(s.onlineProvider) } else null
       val useOnline = s.onlineEnabled && onlineAvailable(network, apiKey != null, s.onlineProvider, targets)
 
       if (!useOnline) {
@@ -167,7 +180,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
             SessionStatus.Message(R.string.status_needs_online, listOf(spoken.first { !it.offlineInput }))
           !withContext(Dispatchers.IO) { mtSupported() } ->
             SessionStatus.Message(R.string.status_mt_unsupported)
-          withContext(Dispatchers.IO) { requiredModelIds(offlineEngines(s, conversation), s.mtModel).any { !Models.isPresent(app, it) } } ->
+          withContext(Dispatchers.IO) { requiredModelIds(asrEnginesFor(s.sessionMode, s.listenSource, mine, s.conversationPartner, s.jaRecognizer), s.mtModel).any { !Models.isPresent(app, it) } } ->
             SessionStatus.Message(R.string.status_models_missing)
           else -> null
         }
@@ -178,23 +191,24 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         }
       }
 
-      noEarphones = false
+      // Conversation learns this from its router; Listen has no router, so check the outputs here.
+      noEarphones = !conversation && !listenHasPrivateOutput(mediaOutputTypes(app))
       val engine: SpeechTranslator
       if (conversation) {
         // Create the router before the service starts: the service records the router
         // generation in onStartCommand to scope its onDestroy safety net to this session.
         val router = AudioRouters.create(app)
         engine = if (useOnline) {
-          OnlineConversationTranslator(app, apiKey!!, s, s.onlineProvider, mine, s.conversationPartner, input, router)
+          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, input, router)
         } else {
-          OfflineConversationTranslator(app, s, input, mine, s.conversationPartner, router)
+          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, input, mine, s.conversationPartner, router)
         }
         speaking = false // every session starts on the partner's side; Speaking is pressed to talk
       } else {
         engine = when {
           !useOnline -> OfflineTranslator(app, s, input, s.listenSource, mine)
-          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, mine, input, s.listenSource)
-          else -> OpenAiTranslator(app, apiKey!!, s, mine, input, s.listenSource)
+          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, input, s.listenSource)
+          else -> OpenAiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, input, s.listenSource)
         }
       }
       translator = engine
@@ -207,20 +221,21 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  /**
-   * The recognizers an offline session loads: one per session. The Conversation directions
-   * share one engine, so when they would pick different ones both use Nemotron.
-   */
-  private fun offlineEngines(s: AppSettings, conversation: Boolean): Set<AsrEngine> =
-    if (conversation) {
-      val me = asrEngineFor(s.myLanguage, s.jaRecognizer)
-      setOf(if (me == asrEngineFor(s.conversationPartner, s.jaRecognizer)) me else AsrEngine.NEMOTRON)
-    } else {
-      setOf(asrEngineFor(s.listenSource, s.jaRecognizer))
-    }
+  private fun autoSpeakNow() = settings.value.autoSpeak
+
+  private fun speechRateNow() = settings.value.speechRate
 
   fun stop() {
-    val engine = translator ?: return
+    if (!recording) return
+    val engine = translator
+    if (engine == null) {
+      // Still in the pre-start checks: nothing to wind down, so go straight back to idle.
+      startJob?.cancel()
+      startJob = null
+      recording = false
+      status = null
+      return
+    }
     engine.stop()
     status = SessionStatus.Message(R.string.status_finishing)
   }
@@ -238,15 +253,18 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     RecordingService.stop(getApplication())
   }
 
+  /**
+   * Engines call this from background threads, so the turn list is read on Main and only the
+   * file write leaves it, on the single-thread dispatcher.
+   */
   private fun persist() {
-    val done = turns.filter { it.translation != null } // already chronological
-    if (done.isEmpty()) return
-    SessionStore.save(
-      getApplication(),
-      SessionLog(
+    viewModelScope.launch(Dispatchers.Main.immediate) {
+      val done = turns.filter { it.translation != null } // already chronological
+      if (done.isEmpty()) return@launch
+      val log = SessionLog(
         id = sessionId,
         startedAt = startedAt,
-        mode = settings.value.sessionMode.name,
+        mode = sessionMode.name,
         input = input.kind.name,
         utterances = done.map {
           LoggedUtterance(
@@ -255,8 +273,9 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
             at = it.at,
           )
         },
-      ),
-    )
+      )
+      withContext(persistDispatcher) { SessionStore.save(getApplication(), log) }
+    }
   }
 
   /** Listen speaks only to a private output; Conversation engines speak through their own router. */

@@ -10,9 +10,9 @@ import app.rly3h.voxwk.audio.OFFLINE_CHUNK_MS
 import app.rly3h.voxwk.audio.SAMPLE_RATE_16K
 import app.rly3h.voxwk.data.AppSettings
 import app.rly3h.voxwk.data.Models
+import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.lang.AsrEngine
 import app.rly3h.voxwk.lang.Language
-import app.rly3h.voxwk.lang.asrEngineFor
 import app.rly3h.voxwk.lang.listenSkips
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -81,12 +81,14 @@ internal class OfflineTranslator(
   private val mtPath = modelFile(context, settings.mtModel.modelId).absolutePath
   private val vadDir = Models.dir(context, "vad")
 
-  // One recognizer per session. The Conversation directions share one engine, so when
-  // they would pick different ones both use Nemotron.
-  private val asrEngine: AsrEngine = conversation?.let { conv ->
-    val me = asrEngineFor(conv.mine, settings.jaRecognizer)
-    if (me == asrEngineFor(conv.partner, settings.jaRecognizer)) me else AsrEngine.NEMOTRON
-  } ?: asrEngineFor(source, settings.jaRecognizer)
+  // One recognizer per session, chosen by the same function as the start-time model check.
+  private val asrEngine: AsrEngine = asrEnginesFor(
+    if (conversation != null) SessionMode.CONVERSATION else SessionMode.LISTEN,
+    source,
+    conversation?.mine ?: target,
+    conversation?.partner ?: target,
+    settings.jaRecognizer,
+  ).single()
 
   private val running = AtomicBoolean(false)
 

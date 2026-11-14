@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 internal class OfflineConversationTranslator(
   private val context: Context,
   private val settings: AppSettings,
+  private val autoSpeak: () -> Boolean,
+  private val speechRate: () -> Float,
   private val input: AudioInput,
   private val mine: Language,
   private val partner: Language,
@@ -57,7 +59,7 @@ internal class OfflineConversationTranslator(
         if (!isActive || stopRequested) return@launch
         router.begin()?.let { callbacks.onStatus(it) }
         // Created only now so a session that never starts does not leave a TTS engine bound.
-        val tts = TtsPlayback(context, router, { settings.autoSpeak }, { settings.speechRate })
+        val tts = TtsPlayback(context, router, autoSpeak, speechRate)
         playback = tts
         launch { tts.run() }
 

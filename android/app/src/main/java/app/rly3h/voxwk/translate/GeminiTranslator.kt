@@ -43,13 +43,15 @@ import okio.ByteString
  * output transcription (rendered into one turn row) and translated audio
  * (24 kHz PCM16, played via AudioTrack). The model detects the source language;
  * we only pin the target ([target]). Mic audio comes from [input]; [apiKey] and
- * [settings] are the values the caller resolved at session start. [source] only
+ * [settings] are the values the caller resolved at session start, except [autoSpeak], which is
+ * read live so muting takes effect mid-session. [source] only
  * labels the turns (null = not known up front).
  */
 internal class GeminiTranslator(
   private val context: Context,
   private val apiKey: String,
   private val settings: AppSettings,
+  private val autoSpeak: () -> Boolean,
   private val target: Language,
   private val input: AudioInput,
   private val source: Language? = null,
@@ -75,7 +77,7 @@ internal class GeminiTranslator(
     ?: throw IllegalArgumentException("Gemini cannot translate into ${target.code}")
 
   private val audio = RealtimeAudioSink(
-    autoSpeak = { settings.autoSpeak },
+    autoSpeak = autoSpeak,
     outputTypes = { mediaOutputTypes(context) },
   )
 

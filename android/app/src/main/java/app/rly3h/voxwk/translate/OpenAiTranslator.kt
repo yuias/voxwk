@@ -38,13 +38,15 @@ import okhttp3.WebSocketListener
  * translated-audio deltas (played via AudioTrack). The Realtime model detects the
  * source language itself; we only pin the target ([target], which must be an
  * OpenAI output language). Mic audio comes from [input]; [apiKey] and [settings]
- * are the values the caller resolved at session start. [source] only labels the
+ * are the values the caller resolved at session start, except [autoSpeak], which is read
+ * live so muting takes effect mid-session. [source] only labels the
  * turns (null = not known up front).
  */
 internal class OpenAiTranslator(
   private val context: Context,
   private val apiKey: String,
   private val settings: AppSettings,
+  private val autoSpeak: () -> Boolean,
   private val target: Language,
   private val input: AudioInput,
   private val source: Language? = null,
@@ -70,7 +72,7 @@ internal class OpenAiTranslator(
     ?: throw IllegalArgumentException("OpenAI cannot translate into ${target.code}")
 
   private val audio = RealtimeAudioSink(
-    autoSpeak = { settings.autoSpeak },
+    autoSpeak = autoSpeak,
     outputTypes = { mediaOutputTypes(context) },
   )
 

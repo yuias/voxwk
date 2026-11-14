@@ -2,7 +2,11 @@ package app.rly3h.voxwk.translate
 
 import android.content.Context
 import app.rly3h.voxwk.data.Models
+import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.lang.AsrEngine
+import app.rly3h.voxwk.lang.JaRecognizer
+import app.rly3h.voxwk.lang.Language
+import app.rly3h.voxwk.lang.asrEngineFor
 import java.io.File
 import uniffi.translatecore.asrStreamUnload
 import uniffi.translatecore.asrUnload
@@ -12,6 +16,25 @@ import uniffi.translatecore.vadUnload
 /** Absolute path of a model's checkFile (for MT: the .gguf passed to mtLoad). */
 internal fun modelFile(context: Context, id: String): File =
   File(Models.dir(context, id), Models.spec(context, id).checkFile)
+
+/**
+ * The recognizers an offline session loads: exactly one. Listen follows the source language.
+ * The Conversation directions share one engine, so when they would pick different ones both
+ * use Nemotron. A set, because model checks and unloading work on sets of engines.
+ */
+internal fun asrEnginesFor(
+  mode: SessionMode,
+  listenSource: Language?,
+  mine: Language,
+  partner: Language,
+  ja: JaRecognizer,
+): Set<AsrEngine> =
+  if (mode == SessionMode.CONVERSATION) {
+    val me = asrEngineFor(mine, ja)
+    setOf(if (me == asrEngineFor(partner, ja)) me else AsrEngine.NEMOTRON)
+  } else {
+    setOf(asrEngineFor(listenSource, ja))
+  }
 
 /**
  * Frees the ASR engines the session does not use, so a change of recognizer gives its
