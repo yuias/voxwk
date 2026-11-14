@@ -18,6 +18,9 @@ path = "uniffi-bindgen.rs"
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"] }
 thiserror = "2"
+# libopus: built from source when cross-compiling (audiopus_sys), so it is statically linked
+# into libtranslatecore.so and the app has no extra native library to load.
+opus = "0.3"
 
 # llama.cpp is cross-compiled with CMake, so it is Android-only: host builds
 # (cargo test, uniffi-bindgen) must not need CMake or a C++ toolchain.

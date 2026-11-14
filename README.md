@@ -32,8 +32,8 @@ Japanese and English are the verified pair. The other languages are best effort.
 ### Prerequisites
 
 - JDK 17 or later (the Gradle build uses a Java 17 toolchain)
-- Android SDK with platform `android-37` and NDK `27.2.12479018`. Set `ANDROID_HOME`, and `ANDROID_NDK_HOME` if the NDK
-  is not under `$ANDROID_HOME/ndk`.
+- Android SDK with platform `android-37` and NDK `27.2.12479018`. Set `ANDROID_HOME` and `ANDROID_NDK_HOME`
+  (the Opus library's CMake build reads the NDK path from it).
 - Rust (stable) with the Android targets, and `cargo-ndk`:
   ```sh
   rustup target add aarch64-linux-android x86_64-linux-android

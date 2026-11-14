@@ -6,3 +6,11 @@ CMAKE_GENERATOR = "Ninja"
 # GGML_CPU_ARM_ARCH is deliberately not set here: llama-cpp-sys-2 forwards every
 # GGML_* env var to CMake for all ABIs, so it would leak into the x86_64 configure.
 # The per-ABI build calls (android/app/build.gradle.kts) set it for arm64-v8a only.
+
+# audiopus_sys (libopus, built from source for Android) runs cmake with only
+# CMAKE_SYSTEM_NAME=Android, which cmake cannot resolve to an NDK. cmake-rs reads
+# these per-target toolchain files. llama-cpp-sys-2 sets its own toolchain and ignores them.
+CMAKE_TOOLCHAIN_FILE_aarch64_linux_android = { value = "tools/cmake/android-arm64-v8a.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_x86_64_linux_android = { value = "tools/cmake/android-x86_64.cmake", relative = true }
+# libopus 1.3 declares an old cmake_minimum_required that cmake 4 rejects.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

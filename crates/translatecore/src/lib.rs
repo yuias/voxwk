@@ -1,12 +1,14 @@
 //! translatecore — native pipeline core exposed to the Android app via UniFFI.
 //!
 //! Hosts the on-device speech stack: Silero VAD and sherpa-onnx ASR (`vad`,
-//! `asr`) and llama.cpp GGUF translation (`mt`).
+//! `asr`), llama.cpp GGUF translation (`mt`) and the Glass microphone's Opus
+//! decoder (`opus`).
 
 uniffi::setup_scaffolding!();
 
 mod asr;
 mod mt;
+mod opus;
 mod vad;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
