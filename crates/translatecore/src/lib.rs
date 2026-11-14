@@ -1,10 +1,13 @@
 //! translatecore — native pipeline core exposed to the Android app via UniFFI.
 //!
-//! Hosts llama.cpp GGUF translation (`mt`).
+//! Hosts the on-device speech stack: Silero VAD and sherpa-onnx ASR (`vad`,
+//! `asr`) and llama.cpp GGUF translation (`mt`).
 
 uniffi::setup_scaffolding!();
 
+mod asr;
 mod mt;
+mod vad;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum TranslateError {
@@ -61,4 +64,178 @@ pub fn mt_translate_streaming(
 #[uniffi::export]
 pub fn mt_unload() {
     mt::unload()
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum AsrError {
+    #[error("{0}")]
+    Failed(String),
+}
+
+/// Transcript plus SenseVoice's detected language tag (`<|en|>`, `<|ja|>`, ...;
+/// empty if the model didn't report one). The tag drives translation direction.
+#[derive(uniffi::Record)]
+pub struct AsrResult {
+    pub text: String,
+    pub lang: String,
+}
+
+/// Loads the SenseVoice recognizer under `model_dir` into the resident engine
+/// without recognizing anything, to warm it up. Idempotent per `model_dir`.
+#[uniffi::export]
+pub fn asr_load(model_dir: String) -> Result<(), AsrError> {
+    asr::load(&model_dir).map_err(AsrError::Failed)
+}
+
+/// Frees the resident SenseVoice recognizer. No-op when none is loaded; the next
+/// `asr_load` / `asr_recognize` reloads it.
+#[uniffi::export]
+pub fn asr_unload() {
+    asr::unload()
+}
+
+/// Transcribes 16 kHz mono PCM (signed 16-bit little-endian) with the SenseVoice
+/// model under `model_dir`. Language is auto-detected. Returns the transcript.
+/// Bytes are used over the FFI to avoid boxing tens of thousands of floats.
+/// Loads the recognizer on first use, then reuses the resident engine.
+#[uniffi::export]
+pub fn asr_recognize(
+    model_dir: String,
+    pcm16le: Vec<u8>,
+    sample_rate: i32,
+) -> Result<AsrResult, AsrError> {
+    let samples: Vec<f32> = pcm16le
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+        .collect();
+    let (text, lang) = asr::recognize(&model_dir, &samples, sample_rate).map_err(AsrError::Failed)?;
+    Ok(AsrResult { text, lang })
+}
+
+/// Partial transcript from the streaming recognizer plus whether sherpa detected
+/// an end-of-utterance on this chunk. On `endpoint`, `text` is the finalized
+/// transcript for the segment that just ended and the stream has been reset.
+#[derive(uniffi::Record)]
+pub struct AsrStreamResult {
+    pub text: String,
+    pub endpoint: bool,
+}
+
+/// Loads the streaming (Nemotron 3.5) recognizer under `model_dir` and creates its
+/// resident stream. `rule1`/`rule2`/`rule3` are the endpoint rules in seconds
+/// (trailing silence before / after decoded speech, and max utterance length);
+/// the recognizer is recreated when they change. `language` is the stream's
+/// decoding language (`"auto"` or empty for automatic detection); changing it
+/// only updates the live stream. Idempotent for equal arguments.
+#[uniffi::export]
+pub fn asr_stream_load(
+    model_dir: String,
+    rule1: f32,
+    rule2: f32,
+    rule3: f32,
+    language: String,
+) -> Result<(), AsrError> {
+    asr::stream_load(&model_dir, rule1, rule2, rule3, &language).map_err(AsrError::Failed)
+}
+
+/// Frees the resident streaming recognizer and its stream. No-op when none is
+/// loaded; the next `asr_stream_load` / `asr_stream_accept` reloads it.
+#[uniffi::export]
+pub fn asr_stream_unload() {
+    asr::stream_unload()
+}
+
+/// Feeds one chunk of 16 kHz mono PCM (signed 16-bit little-endian) into the
+/// resident streaming recognizer and returns the current partial transcript and
+/// whether an utterance just ended. Loads the recognizer on first use.
+#[uniffi::export]
+pub fn asr_stream_accept(
+    model_dir: String,
+    pcm16le: Vec<u8>,
+    sample_rate: i32,
+) -> Result<AsrStreamResult, AsrError> {
+    let samples: Vec<f32> = pcm16le
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+        .collect();
+    let (text, endpoint) =
+        asr::stream_accept(&model_dir, &samples, sample_rate).map_err(AsrError::Failed)?;
+    Ok(AsrStreamResult { text, endpoint })
+}
+
+/// Discards any in-progress utterance in the resident stream (e.g. when the user
+/// stops recording).
+#[uniffi::export]
+pub fn asr_stream_reset(model_dir: String) -> Result<(), AsrError> {
+    asr::stream_reset(&model_dir).map_err(AsrError::Failed)
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum VadError {
+    #[error("{0}")]
+    Failed(String),
+}
+
+/// Packs mono f32 samples back into 16 kHz PCM16 little-endian bytes, the format
+/// the SenseVoice recognizer consumes — so a VAD segment flows straight in.
+fn samples_to_pcm16le(samples: Vec<f32>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(samples.len() * 2);
+    for s in samples {
+        let v = (s * 32768.0).clamp(-32768.0, 32767.0) as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// Loads/configures the Silero VAD under `model_dir`. The tuning params (speech
+/// probability `threshold`, and minimum silence / minimum speech / maximum speech
+/// durations in seconds) are baked in at creation, so changing them recreates the
+/// detector. Idempotent for equal arguments.
+#[uniffi::export]
+pub fn vad_load(
+    model_dir: String,
+    threshold: f32,
+    min_silence_s: f32,
+    min_speech_s: f32,
+    max_speech_s: f32,
+) -> Result<(), VadError> {
+    vad::load(&model_dir, threshold, min_silence_s, min_speech_s, max_speech_s)
+        .map_err(VadError::Failed)
+}
+
+/// Frees the resident Silero detector. No-op when none is loaded.
+#[uniffi::export]
+pub fn vad_unload() {
+    vad::unload()
+}
+
+/// Feeds one chunk of 16 kHz mono PCM16 LE into the resident detector and returns
+/// the speech segments that finished on this chunk (each as PCM16 LE, ready for
+/// `asr_recognize`). Usually empty until a pause ends an utterance.
+#[uniffi::export]
+pub fn vad_accept(
+    model_dir: String,
+    pcm16le: Vec<u8>,
+    sample_rate: i32,
+) -> Result<Vec<Vec<u8>>, VadError> {
+    let samples: Vec<f32> = pcm16le
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+        .collect();
+    let segs = vad::accept(&model_dir, &samples, sample_rate).map_err(VadError::Failed)?;
+    Ok(segs.into_iter().map(samples_to_pcm16le).collect())
+}
+
+/// Forces the in-progress utterance to be emitted (e.g. when recording stops
+/// mid-sentence). Returns the flushed segment(s) as PCM16 LE.
+#[uniffi::export]
+pub fn vad_flush(model_dir: String) -> Result<Vec<Vec<u8>>, VadError> {
+    let segs = vad::flush(&model_dir).map_err(VadError::Failed)?;
+    Ok(segs.into_iter().map(samples_to_pcm16le).collect())
+}
+
+/// Discards any buffered audio / in-progress utterance in the resident detector.
+#[uniffi::export]
+pub fn vad_reset(model_dir: String) -> Result<(), VadError> {
+    vad::reset(&model_dir).map_err(VadError::Failed)
 }
