@@ -141,6 +141,32 @@
     <string name="settings_test_failed">Test failed: %1$s</string>
     <string name="settings_idle_gap">Pause to split a turn</string>
     <string name="settings_idle_gap_hint">How long a pause splits a turn online. Lower = more, shorter turns. Applies to both providers and to the next session.</string>
+    <string name="settings_models">Models</string>
+    <string name="settings_models_hint">Required for offline translation. Downloaded once and stored on this device.</string>
+    <string name="models_download_required">Download models for current settings</string>
+    <string name="models_all_required_present">All models for the current settings are downloaded.</string>
+    <string name="models_in_use">%1$s · in use</string>
+    <string name="models_download">Download</string>
+    <string name="models_cancel">Cancel</string>
+    <string name="models_delete">Delete</string>
+    <string name="models_delete_title">Delete %1$s?</string>
+    <string name="models_delete_text">Frees %1$s. You can download it again later.</string>
+    <string name="models_delete_locked">Model deletion is unavailable while a session is recording.</string>
+    <string name="models_delete_while_recording">Stop the current session before deleting models.</string>
+    <string name="models_deleted">Deleted %1$s.</string>
+    <string name="models_delete_incomplete">Could not delete all files of %1$s.</string>
+    <string name="models_delete_failed">Delete failed: %1$s</string>
+    <string name="models_status_downloaded">Downloaded · %1$s</string>
+    <string name="models_status_incomplete">Incomplete · %1$s</string>
+    <string name="models_status_missing">Not downloaded</string>
+    <string name="models_status_missing_approx">Not downloaded (~%1$d MB)</string>
+    <string name="models_status_waiting">Waiting to download…</string>
+    <string name="models_status_downloading">Downloading… %1$s</string>
+    <string name="models_status_downloading_of">Downloading… %1$s of %2$s</string>
+    <string name="models_status_unpacking">Unpacking… %1$s</string>
+    <string name="models_status_failed">Download failed: %1$s</string>
+    <string name="models_size_mb">%1$d MB</string>
+    <string name="models_size_under_1_mb">&lt;1 MB</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">%1$s v%2$s (%3$s)</string>
 </resources>
