@@ -15,4 +15,59 @@
     <string name="lang_ru">Russian</string>
     <string name="lang_zh_hans">Chinese (Simplified)</string>
     <string name="lang_zh_hant">Chinese (Traditional)</string>
+
+    <string name="language_auto">Auto</string>
+
+    <string name="session_mode_listen">Listen</string>
+    <string name="session_mode_conversation">Conversation</string>
+    <string name="session_partner_chip">Partner: %1$s</string>
+    <string name="session_partner_auto_chip">Partner: Auto</string>
+    <string name="session_partner_auto_option">Auto-detect</string>
+    <string name="session_online_only_option">%1$s (online only)</string>
+    <string name="session_my_language">You: %1$s</string>
+    <string name="session_new">Start a new session</string>
+    <string name="session_online_on">Online mode</string>
+    <string name="session_online_off">Offline mode</string>
+    <string name="session_empty">Tap the mic and start speaking.</string>
+    <string name="session_start">Start recording</string>
+    <string name="session_stop">Stop</string>
+    <string name="session_speak_on">Speak translations aloud</string>
+    <string name="session_speak_off">Translations muted</string>
+    <string name="session_speaking_button">Speaking (%1$s → %2$s)</string>
+
+    <string name="session_online_needs_key">Add a %1$s API key in Settings to use Online mode.</string>
+    <string name="session_online_needs_network">Online mode needs an internet connection.</string>
+    <string name="session_online_unsupported">%1$s cannot translate to %2$s. Choose another provider in Settings.</string>
+    <string name="provider_openai">OpenAI</string>
+    <string name="provider_gemini">Gemini</string>
+
+    <string name="turn_direction">%1$s → %2$s</string>
+    <string name="turn_direction_me">You · %1$s</string>
+    <string name="turn_direction_partner">Partner · %1$s</string>
+    <string name="speaker_me">You</string>
+    <string name="speaker_partner">Partner</string>
+
+    <string name="idle_listen">Tap the mic to start listening.</string>
+    <string name="idle_conversation">Tap the mic, then use Speaking to choose who talks.</string>
+    <string name="status_finishing">Finishing…</string>
+    <string name="status_error">Error: %1$s</string>
+    <plurals name="status_stopped">
+        <item quantity="one">Stopped. (%1$d turn)</item>
+        <item quantity="other">Stopped. (%1$d turns)</item>
+    </plurals>
+    <string name="status_mt_unsupported">Offline translation is not supported on this device\'s CPU. Use Online mode.</string>
+    <string name="status_models_missing">Models missing. Download them in Settings → Models.</string>
+    <string name="status_needs_online">%1$s needs Online mode.</string>
+
+    <string name="status_listening">Listening…</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_directional">%1$s: %2$s</string>
+    <string name="status_no_tts_voice">No voice for %1$s on this device. The translation is shown as text only.</string>
+    <string name="status_failed_mic">Microphone error: %1$s</string>
+    <string name="status_failed_recognition">Speech recognition error: %1$s</string>
+    <string name="status_failed_translation">Translation error: %1$s</string>
+    <string name="status_failed_network">Network error: %1$s</string>
+    <string name="status_failed_engine">Engine error: %1$s</string>
+    <string name="status_unknown_detail">unknown</string>
+    <string name="notice_no_earphones">No earphones: your translation is text only.</string>
 </resources>
