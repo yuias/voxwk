@@ -1,0 +1,22 @@
+[package]
+name = "translatecore"
+version = "0.1.0"
+edition = "2021"
+description = "Native translation pipeline core (VAD/ASR/MT orchestration)."
+
+[lib]
+name = "translatecore"
+# cdylib: loaded by the Android app via JNA. staticlib kept for future iOS/desktop linking.
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+uniffi = "0.32"
+thiserror = "2"
+
+# llama.cpp is cross-compiled with CMake, so it is Android-only: host builds
+# (cargo test, uniffi-bindgen) must not need CMake or a C++ toolchain.
+[target.'cfg(target_os = "android")'.dependencies]
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["android-static-stdcxx"] }
+# Direct dependency only for llama_print_system_info(); keep it pinned to the
+# version llama-cpp-2 resolves to.
+llama-cpp-sys-2 = { version = "=0.1.159", default-features = false }

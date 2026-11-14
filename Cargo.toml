@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/translatecore"]
+
+# cmake-rs derives CMAKE_BUILD_TYPE from the package's opt-level. Without this, a
+# debug build of the core would contain an unoptimized ggml.
+[profile.dev.package.llama-cpp-sys-2]
+opt-level = 3

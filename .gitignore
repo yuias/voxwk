@@ -16,3 +16,11 @@ local.properties
 /tools/mt-eval/.venv/
 /tools/mt-eval/data/
 /tools/mt-eval/out/
+
+# Rust build output and native libraries copied into the app by the Gradle build
+/target/
+/android/app/src/main/jniLibs/
+
+# Release signing configuration
+/android/keystore.properties
+
