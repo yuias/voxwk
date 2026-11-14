@@ -15,6 +15,11 @@ class FeedableTranslatorTest {
   }
 
   @Test
+  fun onlineConversationTranslatorIsAConversationTranslator() {
+    assertTrue(ConversationTranslator::class.java.isAssignableFrom(OnlineConversationTranslator::class.java))
+  }
+
+  @Test
   fun offlineConversationTranslatorIsAConversationTranslator() {
     assertTrue(ConversationTranslator::class.java.isAssignableFrom(OfflineConversationTranslator::class.java))
   }
