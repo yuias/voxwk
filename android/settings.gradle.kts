@@ -30,4 +30,4 @@ plugins {
 }
 
 rootProject.name = "voxwk"
-include(":app")
+include(":app", ":glass-gm")

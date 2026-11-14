@@ -31,3 +31,5 @@ plugins {
 
 rootProject.name = "glass-spp-poc"
 include(":gm", ":app")
+// The codec lives in the app build; the PoC reuses it.
+project(":gm").projectDir = file("../../android/glass-gm")

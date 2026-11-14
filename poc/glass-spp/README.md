@@ -3,8 +3,9 @@
 Throwaway Android app for checking the MemoMind Glass Classic SPP protocol on real hardware before the voxwk design
 is fixed. It is not part of the app build.
 
-- `gm/`: pure-JVM GM frame codec, TLVs, stream splitting for the command and recording links, and request/response
-  sessions over `InputStream`/`OutputStream`. Unit tests run on the desktop.
+- `../../android/glass-gm/` (shared with the app, included here as `:gm`): pure-JVM GM frame codec, TLVs, stream
+  splitting for the command and recording links, and request/response sessions over `InputStream`/`OutputStream`.
+  Unit tests run on the desktop.
 - `app/`: a single debug screen that opens the SPP sockets, sends commands, and records every byte to a log file.
 - `tools/decode_recording.py`: decodes a recording-link capture to a 16 kHz WAV on the desktop.
 
