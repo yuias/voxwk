@@ -6,6 +6,12 @@
     <string name="recording_notification_text">Recording — tap to return</string>
     <string name="recording_notification_stop">Stop</string>
 
+    <string name="model_download_channel_name">Model downloads</string>
+    <string name="model_download_channel_description">Shown while a translation model is downloading.</string>
+    <string name="model_download_downloading">Downloading %1$s…</string>
+    <string name="model_download_extracting">Unpacking %1$s…</string>
+    <string name="model_download_cancel">Cancel</string>
+
     <string name="lang_ja">Japanese</string>
     <string name="lang_en">English</string>
     <string name="lang_fr">French</string>
