@@ -1,4 +1,15 @@
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Properties
+
+buildscript {
+  repositories { mavenCentral() }
+  // Reused by the fetchSherpaPrebuilt task to extract the release tar.bz2,
+  // mirroring the in-app extraction (same library, same version).
+  dependencies { classpath("org.apache.commons:commons-compress:1.28.0") }
+}
 
 plugins {
   alias(libs.plugins.android.application)
@@ -123,6 +134,153 @@ kotlin {
     jvmToolchain(17)
 }
 
+// ---- Rust core (libtranslatecore.so) --------------------------------------
+// Cross-compiled from <repo>/crates/translatecore with cargo-ndk rather than
+// committed, so the ~190 MB build artifact stays out of the repo. The task drops
+// one .so per ABI into jniLibs, where AGP's jniLibs merge picks it up. Requires a
+// Rust toolchain + cargo-ndk + the android rustup targets (aarch64-linux-android,
+// x86_64-linux-android).
+val repoRoot = rootDir.parentFile
+val rustCoreDir = repoRoot.resolve("crates/translatecore")
+val jniLibsDir = layout.projectDirectory.dir("src/main/jniLibs")
+
+// One cargo-ndk invocation per ABI: GGML_CPU_ARM_ARCH (llama.cpp's dot-product
+// build) must reach the arm64 configure only. llama-cpp-sys-2 forwards every GGML_*
+// env var to CMake for all ABIs, so a shared .cargo/config.toml [env] entry would
+// leak into x86_64.
+val ggmlArm64Arch = "armv8.2-a+dotprod"
+
+fun registerCargoBuild(taskName: String, abi: String, env: Map<String, String>) =
+    tasks.register<Exec>(taskName) {
+        group = "build"
+        description = "Cross-compiles the Rust core for $abi into jniLibs via cargo-ndk."
+        workingDir = repoRoot // the workspace root; the crate is selected with -p
+
+        inputs.dir(rustCoreDir.resolve("src"))
+        inputs.file(rustCoreDir.resolve("Cargo.toml"))
+        inputs.file(rustCoreDir.resolve("build.rs"))
+        inputs.file(repoRoot.resolve("Cargo.toml"))
+        inputs.file(repoRoot.resolve("Cargo.lock"))
+        inputs.file(repoRoot.resolve(".cargo/config.toml"))
+        inputs.properties(env)
+        outputs.file(jniLibsDir.file("$abi/libtranslatecore.so"))
+
+        // Exec inherits the parent environment, so cargo-ndk picks up ANDROID_NDK_HOME
+        // (or ANDROID_HOME/ndk) on its own — no SDK path to thread through here.
+        // A value exported in the developer's shell must not reach the x86_64 build.
+        environment.remove("GGML_CPU_ARM_ARCH")
+        environment(env)
+        // --platform matches minSdk; llama.cpp's CMake build reads it as ANDROID_PLATFORM.
+        commandLine = listOf(
+            "cargo", "ndk", "--platform", "31",
+            "-t", abi,
+            "-o", jniLibsDir.asFile.absolutePath,
+            "build", "--release", "-p", "translatecore",
+        )
+    }
+
+val cargoBuildRustCoreArm64 = registerCargoBuild(
+    "cargoBuildRustCoreArm64", "arm64-v8a", mapOf("GGML_CPU_ARM_ARCH" to ggmlArm64Arch),
+)
+val cargoBuildRustCoreX86 = registerCargoBuild("cargoBuildRustCoreX86", "x86_64", emptyMap())
+// Serialize the two builds; they share one cargo target dir.
+cargoBuildRustCoreX86.configure { mustRunAfter(cargoBuildRustCoreArm64) }
+
+val cargoBuildRustCore = tasks.register("cargoBuildRustCore") {
+    group = "build"
+    description = "Cross-compiles the Rust core into jniLibs via cargo-ndk."
+    dependsOn(cargoBuildRustCoreArm64, cargoBuildRustCoreX86)
+}
+
+// ---- Third-party sherpa-onnx prebuilt libs --------------------------------
+// libonnxruntime.so + libsherpa-onnx-{c,cxx}-api.so are prebuilt binaries from
+// the sherpa-onnx release, fetched at build time rather than committed.
+// libonnxruntime.so is only here because sherpa links it; the Rust core has no
+// ONNX Runtime binding of its own. They must land in jniLibs before
+// cargoBuildRustCore links libsherpa-onnx-c-api.so
+// (build.rs) and before AGP merges jniLibs into the APK.
+val sherpaVersion = "1.13.8"
+val sherpaLibs = listOf(
+    "libsherpa-onnx-c-api.so",
+    "libsherpa-onnx-cxx-api.so",
+    "libonnxruntime.so",
+)
+
+val fetchSherpaPrebuilt = tasks.register("fetchSherpaPrebuilt") {
+    group = "build"
+    description = "Downloads the prebuilt sherpa-onnx native libs into jniLibs."
+
+    val version = sherpaVersion
+    val libs = sherpaLibs
+    val abis = androidAbis
+    val outDir = jniLibsDir.asFile
+    // Cached in Gradle user home so `clean` and fresh checkouts don't re-download.
+    val cacheDir = File(gradle.gradleUserHomeDir, "caches/sherpa-onnx-prebuilt")
+
+    inputs.property("sherpaVersion", version)
+    outputs.files(abis.flatMap { abi -> libs.map { File(outDir, "$abi/$it") } })
+
+    doLast {
+        val archive = File(cacheDir, "sherpa-onnx-v$version-android.tar.bz2")
+        if (!archive.exists() || archive.length() == 0L) {
+            cacheDir.mkdirs()
+            val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+                "v$version/sherpa-onnx-v$version-android.tar.bz2"
+            logger.lifecycle("Fetching $url")
+            // Manual redirect follow: GitHub bounces release assets to a CDN host.
+            var current = url
+            var hops = 0
+            while (true) {
+                val conn = (URL(current).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                }
+                val code = conn.responseCode
+                if (code in 300..399) {
+                    val loc = conn.getHeaderField("Location") ?: error("redirect without Location")
+                    conn.disconnect()
+                    current = if (loc.startsWith("http")) loc else URL(URL(current), loc).toString()
+                    check(++hops <= 8) { "too many redirects" }
+                    continue
+                }
+                check(code == 200) { "HTTP $code for $current" }
+                val part = File(archive.parentFile, archive.name + ".part")
+                conn.inputStream.use { input -> part.outputStream().use { input.copyTo(it) } }
+                conn.disconnect()
+                if (archive.exists()) archive.delete()
+                check(part.renameTo(archive)) { "rename ${part.name} -> ${archive.name} failed" }
+                break
+            }
+        }
+
+        val wanted = abis.flatMap { abi -> libs.map { "jniLibs/$abi/$it" } }.toSet()
+        BZip2CompressorInputStream(archive.inputStream().buffered()).use { bz ->
+            TarArchiveInputStream(bz).use { tar ->
+                var entry = tar.nextEntry
+                while (entry != null) {
+                    val rel = entry.name.removePrefix("./")
+                    if (!entry.isDirectory && rel in wanted) {
+                        val dest = File(outDir, rel.removePrefix("jniLibs/"))
+                        dest.parentFile.mkdirs()
+                        dest.outputStream().use { tar.copyTo(it) }
+                    }
+                    entry = tar.nextEntry
+                }
+            }
+        }
+    }
+}
+
+// build.rs links against jniLibs/<abi>/libsherpa-onnx-c-api.so, so the prebuilt
+// libs must be in place before the Rust core compiles.
+listOf(cargoBuildRustCoreArm64, cargoBuildRustCoreX86).forEach {
+    it.configure { dependsOn(fetchSherpaPrebuilt) }
+}
+
+// preBuild gates every variant task, so the .so exists before the jniLibs merge.
+tasks.named("preBuild") { dependsOn(cargoBuildRustCore) }
+
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
@@ -162,6 +320,9 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Rust core (UniFFI): generated Kotlin bindings call into libtranslatecore.so via JNA.
+  implementation("net.java.dev.jna:jna:5.19.1@aar")
 
   // Settings, model downloads and the launch splash
   implementation(libs.androidx.datastore.preferences)
