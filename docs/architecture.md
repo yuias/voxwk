@@ -345,9 +345,11 @@ trigger more translations. `TtsPlayback` and `PcmPlayback` expose `EchoGate.spea
 on the speaker, plus 300 ms (`ECHO_TAIL_MS`) for reverberation. A failed route switch counts as speaker playback,
 which errs on the side of muting. `NONE` and `EARPHONE` are never busy.
 
-The capture thread asks `ConversationInputGate.decide(speaking, speakerBusy)` for every chunk. Only the partner
-direction is muted, and the gate never overrides Speaking. Muted chunks are replaced with silence rather than dropped,
-so the audio timeline given to the recognizer or the provider stays continuous.
+The capture thread asks `ConversationInputGate.decide(speaking, speakerBusy)` for every chunk. Both directions are
+muted while the speaker is busy: the translation of my own speech plays on the speaker, and with Speaking still on the
+mic would hear it as a new turn of mine. The platform AEC is not relied on; on one device it had no echo reference.
+Muted chunks are replaced with silence rather than dropped, so the audio timeline given to the recognizer or the
+provider stays continuous.
 
 ### Behavior on Stop
 
@@ -493,8 +495,8 @@ run `tools/gen-bindings.sh` and commit the result.
 - Japanese accuracy of Nemotron streaming is lower than SenseVoice's.
 - Online Conversation connects two sessions at once, so billing can double.
 - Without earphones, the translation of the partner's speech is text only, because it must not play on the speaker.
-- While a translation plays on the speaker in Conversation, the partner direction is muted, so partner speech can be
-  missed. The Speaking direction is never muted.
+- While a translation plays on the speaker in Conversation, the mic is muted in both directions, so speech during
+  playback is lost and an utterance in progress is cut off. Playback on earphones does not mute the mic.
 - Output routing (`MODE_IN_COMMUNICATION` plus `setCommunicationDevice`) is not verified on a device (section 6).
 - Turn splitting is heuristic (VAD parameters, endpoint rules, the idle gap), so it depends on the environment and
   speaking style.

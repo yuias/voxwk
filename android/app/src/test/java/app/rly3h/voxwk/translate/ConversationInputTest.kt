@@ -14,8 +14,8 @@ class ConversationInputTest {
     val gate = ConversationInputGate()
     assertEquals(InputDecision(Speaker.PARTNER, muted = false, switchedFrom = null), gate.decide(false, false))
     assertEquals(InputDecision(Speaker.ME, muted = false, switchedFrom = Speaker.PARTNER), gate.decide(true, false))
-    // Speaking is never muted, even while the speaker plays.
-    assertEquals(InputDecision(Speaker.ME, muted = false, switchedFrom = null), gate.decide(true, true))
+    // Speaking is muted too while the speaker plays: otherwise my own translation becomes a new ME turn.
+    assertEquals(InputDecision(Speaker.ME, muted = true, switchedFrom = null), gate.decide(true, true))
     assertEquals(InputDecision(Speaker.PARTNER, muted = true, switchedFrom = Speaker.ME), gate.decide(false, true))
   }
 

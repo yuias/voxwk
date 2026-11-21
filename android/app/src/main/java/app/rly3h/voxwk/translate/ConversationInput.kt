@@ -21,9 +21,10 @@ internal class ConversationInputGate {
 
   /**
    * Speaking ON means the user talks (ME); otherwise the mic is treated as the
-   * partner. Only the partner direction is muted while the speaker is busy: the
-   * partner's translation plays on the phone speaker and would be picked up as
-   * partner speech, while an explicit Speaking press is never overridden.
+   * partner. Both directions are muted while the speaker is busy: the translation
+   * of my own speech plays there, and with Speaking still latched the mic hears it
+   * as a new ME turn. The platform AEC cannot be relied on (on a OnePlus CPH2655 it
+   * had no echo reference), so the price is that nobody can talk over the speaker.
    */
   fun decide(speaking: Boolean, speakerBusy: Boolean): InputDecision {
     val active = if (speaking) Speaker.ME else Speaker.PARTNER
@@ -31,7 +32,7 @@ internal class ConversationInputGate {
     last = active
     return InputDecision(
       active = active,
-      muted = active == Speaker.PARTNER && speakerBusy,
+      muted = speakerBusy,
       switchedFrom = if (prev != null && prev != active) prev else null,
     )
   }
