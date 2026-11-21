@@ -18,7 +18,8 @@ enum class OnlineProvider { OPENAI, GEMINI }
  * @param openAiCode OpenAI Realtime output language; null = not an OpenAI output language
  * @param geminiCode Gemini Live translation language
  * @param senseVoiceTag substring of the SenseVoice tag ("<|en|>" contains "en"); null = SenseVoice cannot recognise it
- * @param offlineInput Nemotron 3.5 recognises it (false only for ZH_HANT: Nemotron lists zh-CN)
+ * @param nemotronCode Nemotron 3.5 prompt key (its `prompt_dictionary`; a bare "ja" is not a key and silently
+ *   falls back to auto); null = Nemotron cannot recognise it (ZH_HANT: Nemotron lists zh-CN only)
  */
 enum class Language(
   val code: String,
@@ -28,17 +29,19 @@ enum class Language(
   val openAiCode: String?,
   val geminiCode: String,
   val senseVoiceTag: String?,
-  val offlineInput: Boolean,
+  val nemotronCode: String?,
 ) {
-  JA("ja", R.string.lang_ja, "JA", Locale.JAPANESE, "ja", "ja", "ja", true),
-  EN("en", R.string.lang_en, "EN", Locale.ENGLISH, "en", "en", "en", true),
-  FR("fr", R.string.lang_fr, "FR", Locale.FRENCH, "fr", "fr", null, true),
-  DE("de", R.string.lang_de, "DE", Locale.GERMAN, "de", "de", null, true),
-  IT("it", R.string.lang_it, "IT", Locale.ITALIAN, "it", "it", null, true),
-  ES("es", R.string.lang_es, "ES", Locale.forLanguageTag("es"), "es", "es", null, true),
-  RU("ru", R.string.lang_ru, "RU", Locale.forLanguageTag("ru"), "ru", "ru", null, true),
-  ZH_HANS("zh-hans", R.string.lang_zh_hans, "ZH-S", Locale.SIMPLIFIED_CHINESE, "zh", "zh-Hans", "zh", true),
-  ZH_HANT("zh-hant", R.string.lang_zh_hant, "ZH-T", Locale.TRADITIONAL_CHINESE, null, "zh-Hant", "zh", false),
+  JA("ja", R.string.lang_ja, "JA", Locale.JAPANESE, "ja", "ja", "ja", "ja-JP"),
+  EN("en", R.string.lang_en, "EN", Locale.ENGLISH, "en", "en", "en", "en-US"),
+  FR("fr", R.string.lang_fr, "FR", Locale.FRENCH, "fr", "fr", null, "fr-FR"),
+  DE("de", R.string.lang_de, "DE", Locale.GERMAN, "de", "de", null, "de-DE"),
+  IT("it", R.string.lang_it, "IT", Locale.ITALIAN, "it", "it", null, "it-IT"),
+  ES("es", R.string.lang_es, "ES", Locale.forLanguageTag("es"), "es", "es", null, "es-ES"),
+  RU("ru", R.string.lang_ru, "RU", Locale.forLanguageTag("ru"), "ru", "ru", null, "ru-RU"),
+  ZH_HANS("zh-hans", R.string.lang_zh_hans, "ZH-S", Locale.SIMPLIFIED_CHINESE, "zh", "zh-Hans", "zh", "zh-CN"),
+  ZH_HANT("zh-hant", R.string.lang_zh_hant, "ZH-T", Locale.TRADITIONAL_CHINESE, null, "zh-Hant", "zh", null);
+
+  val offlineInput: Boolean get() = nemotronCode != null
 }
 
 /** Languages the user can pick as "my language". JA only for now; adding a row enables it everywhere. */

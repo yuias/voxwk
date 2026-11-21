@@ -232,9 +232,11 @@ internal class OfflineTranslator(
     vadReset(vadPath)
   }
 
-  private suspend fun loadStream() = withContext(Dispatchers.IO) {
+  // `language` is a Nemotron prompt key or "auto". With the same model and rules, a reload only
+  // changes the resident stream's language, so a conversation can call it on every direction switch.
+  private suspend fun loadStream(language: String = "auto") = withContext(Dispatchers.IO) {
     val ep = settings.endpoint // latest knobs at the start of this session
-    asrStreamLoad(streamDir.absolutePath, ep.rule1, ep.rule2, ep.rule3, "auto")
+    asrStreamLoad(streamDir.absolutePath, ep.rule1, ep.rule2, ep.rule3, language)
     asrStreamReset(streamDir.absolutePath)
   }
 
@@ -371,7 +373,6 @@ internal class OfflineTranslator(
     cb: TranslatorCallbacks,
     conv: OfflineConversationHooks,
   ) = coroutineScope {
-    loadStream()
     val channel = Channel<DirectedChunk>(Channel.UNLIMITED)
     val finalized = Channel<DirectedText>(Channel.UNLIMITED)
     val capture = launch(Dispatchers.IO) {
@@ -399,8 +400,11 @@ internal class OfflineTranslator(
           current = ""
           withContext(Dispatchers.Main) { cb.onPartial("") }
           if (t.isNotEmpty()) finalized.trySend(DirectedText(t, direction))
+        }
+        if (direction != chunk.speaker) {
+          // Each direction has one known language; "auto" decoded Japanese as Chinese on a device.
           try {
-            asrStreamReset(streamDir.absolutePath)
+            loadStream(speakerLanguage(conv, chunk.speaker).nemotronCode ?: "auto")
           } catch (e: Throwable) {
             withContext(Dispatchers.Main) { cb.onStatus(recognitionFailed(e)) }
           }
@@ -443,7 +447,9 @@ internal class OfflineTranslator(
     val vadPath = vadDir.absolutePath
     val streamPath = streamDir.absolutePath
     loadVad()
-    loadStream()
+    // Only one direction uses Nemotron here (the other is SenseVoice), so its language is fixed.
+    val streamSpeaker = Speaker.entries.first { asrEngineFor(speakerLanguage(conv, it), settings.jaRecognizer) == AsrEngine.NEMOTRON }
+    loadStream(speakerLanguage(conv, streamSpeaker).nemotronCode ?: "auto")
     val chunks = Channel<DirectedChunk>(Channel.UNLIMITED)
     val utterances = Channel<Utterance>(Channel.UNLIMITED)
     val capture = launch(Dispatchers.IO) {
@@ -495,7 +501,7 @@ internal class OfflineTranslator(
         withContext(Dispatchers.Main) { cb.onStatus(recognitionFailed(e)) }
     }
     val dispatcher = DirectionalAsrDispatcher(
-      engineFor = { asrEngineFor(if (it == Speaker.ME) conv.mine else conv.partner, settings.jaRecognizer) },
+      engineFor = { asrEngineFor(speakerLanguage(conv, it), settings.jaRecognizer) },
       segments = segmentPath,
       stream = stream,
       sink = sink,
@@ -523,3 +529,6 @@ internal class OfflineTranslator(
     worker.join() // drain any translations still in flight after Stop
   }
 }
+
+private fun speakerLanguage(conv: OfflineConversationHooks, speaker: Speaker): Language =
+  if (speaker == Speaker.ME) conv.mine else conv.partner

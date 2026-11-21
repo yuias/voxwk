@@ -114,8 +114,9 @@ speaker's language is known to be Japanese and Settings has "Japanese recognitio
 including Auto, uses Nemotron.
 
 - **Nemotron 3.5 streaming (`asr_stream`)** is the default. It is multilingual and shows a live partial transcript. It
-  reports no language tag. Kotlin always passes `"auto"` as the stream language: one stream may carry two speakers, and
-  a fixed language would misrecognize the other one. Turns end on sherpa's endpoint rules
+  reports no language tag. Listen passes `"auto"`. Conversation sets each direction's language (`Language.nemotronCode`,
+  such as `ja-JP`; a bare `ja` is not a Nemotron key and falls back to auto) whenever the direction changes, where the
+  stream is reset, because on a device `"auto"` decoded Japanese as Chinese. Turns end on sherpa's endpoint rules
   (`EndpointParams`: rule1 2.4 s, rule2 1.2 s, rule3 20 s by default), where rule2 (silence after speech) is the main
   end-of-turn setting.
 - **SenseVoice (`asr`) with Silero VAD (`vad`)** is more accurate for Japanese. The VAD cuts a segment per utterance

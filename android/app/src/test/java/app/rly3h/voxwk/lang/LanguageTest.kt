@@ -33,6 +33,16 @@ class LanguageTest {
   }
 
   @Test
+  fun nemotronCodesAreDictionaryKeys() {
+    // Keys from the model's prompt_dictionary; a bare "ja" is not one and silently decodes as auto.
+    assertEquals(
+      listOf("ja-JP", "en-US", "fr-FR", "de-DE", "it-IT", "es-ES", "ru-RU", "zh-CN", null),
+      listOf(JA, EN, FR, DE, IT, ES, RU, ZH_HANS, ZH_HANT).map { it.nemotronCode },
+    )
+    assertFalse(ZH_HANT.offlineInput)
+  }
+
+  @Test
   fun onlineCodes() {
     assertEquals("zh", onlineCode(OnlineProvider.OPENAI, ZH_HANS))
     assertNull(onlineCode(OnlineProvider.OPENAI, ZH_HANT))
