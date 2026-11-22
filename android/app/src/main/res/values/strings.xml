@@ -186,7 +186,7 @@
     <string name="models_status_failed">Download failed: %1$s</string>
     <string name="models_size_mb">%1$d MB</string>
     <string name="models_size_under_1_mb">&lt;1 MB</string>
-    <string name="settings_glass">Glass</string>
+    <string name="settings_glass">MemoMind Glass</string>
     <string name="settings_glass_grant">Allow Bluetooth access</string>
     <string name="settings_glass_no_devices">No paired devices</string>
     <string name="settings_glass_enabled">Use Glass</string>
@@ -194,6 +194,19 @@
     <string name="settings_glass_mic_all_around">All-around microphone</string>
     <string name="settings_glass_display_translation">Translation only</string>
     <string name="settings_glass_display_both">Source and translation</string>
+    <string name="settings_recognition">Recognition and translation</string>
+    <string name="settings_turns">Turn detection</string>
+    <string name="settings_summary_speak_both">For me (%1$sx) and my partner</string>
+    <string name="settings_summary_speak_me">For me (%1$sx)</string>
+    <string name="settings_summary_speak_partner">For my partner</string>
+    <string name="settings_summary_off">Off</string>
+    <string name="settings_summary_on">On</string>
+    <string name="settings_summary_on_device">On · %1$s</string>
+    <string name="settings_summary_models_downloading">Downloading</string>
+    <string name="settings_summary_models_missing">Download needed</string>
+    <string name="settings_summary_models_ready">Ready</string>
+    <string name="settings_summary_default">Default</string>
+    <string name="settings_summary_custom">Custom</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">%1$s v%2$s (%3$s)</string>
 </resources>

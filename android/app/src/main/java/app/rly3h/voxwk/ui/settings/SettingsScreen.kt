@@ -7,31 +7,23 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -306,49 +298,4 @@ fun SettingsScreen(modifier: Modifier = Modifier, vm: SettingsViewModel = viewMo
 @Composable
 private fun SectionTitle(text: String) {
   Text(text, style = MaterialTheme.typography.titleMedium)
-}
-
-// One option of an exclusive choice; the whole row is the touch target.
-@Composable
-private fun ChoiceRow(
-  selected: Boolean,
-  enabled: Boolean,
-  title: String,
-  description: String,
-  onSelect: () -> Unit,
-) {
-  Row(
-    Modifier
-      .fillMaxWidth()
-      .heightIn(min = 48.dp)
-      .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    // The row handles the click, so the button itself is not clickable (one tap target).
-    RadioButton(selected = selected, onClick = null, enabled = enabled)
-    Column(Modifier.weight(1f).padding(start = 8.dp)) {
-      Text(title, style = MaterialTheme.typography.bodyMedium)
-      Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-    }
-  }
-}
-
-// Label + current value + a bounded slider. The drag position is local so the stored
-// setting is written once, when the drag finishes, not on every tick.
-@Composable
-private fun SettingSlider(
-  label: String,
-  value: Float,
-  range: ClosedFloatingPointRange<Float>,
-  format: (Float) -> String,
-  onCommit: (Float) -> Unit,
-) {
-  var drag by remember(value) { mutableFloatStateOf(value) }
-  Column {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-      Text(label, style = MaterialTheme.typography.bodyMedium)
-      Text(format(drag), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-    }
-    Slider(value = drag, onValueChange = { drag = it }, onValueChangeFinished = { onCommit(drag) }, valueRange = range)
-  }
 }
