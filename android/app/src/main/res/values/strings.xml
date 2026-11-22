@@ -72,6 +72,10 @@
     <string name="status_mt_unsupported">Offline translation is not supported on this device\'s CPU. Use Online mode.</string>
     <string name="status_models_missing">Models missing. Download them in Settings → Models.</string>
     <string name="status_needs_online">%1$s needs Online mode.</string>
+    <string name="status_glass_connecting">Connecting to the Glass…</string>
+    <string name="status_glass_unavailable">Can\'t connect to the Glass. Force-stop the MemoMind app, or turn Glass off in Settings.</string>
+    <string name="status_glass_permission">Allow Bluetooth access in Settings to use the Glass.</string>
+    <string name="glass_hud_title">voxwk</string>
 
     <string name="status_listening">Listening…</string>
     <string name="status_connecting">Connecting…</string>

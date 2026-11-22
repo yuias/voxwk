@@ -11,7 +11,9 @@ import androidx.lifecycle.viewModelScope
 import app.rly3h.voxwk.R
 import app.rly3h.voxwk.RecordingService
 import app.rly3h.voxwk.VoxwkApp
+import app.rly3h.voxwk.audio.AudioInput
 import app.rly3h.voxwk.audio.AudioRouters
+import app.rly3h.voxwk.audio.GlassAudioInput
 import app.rly3h.voxwk.audio.PhoneAudioInput
 import app.rly3h.voxwk.audio.listenHasPrivateOutput
 import app.rly3h.voxwk.data.AppSettings
@@ -22,6 +24,9 @@ import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.data.SessionStore
 import app.rly3h.voxwk.data.SettingsRepository
 import app.rly3h.voxwk.data.requiredModelIds
+import app.rly3h.voxwk.glass.GlassDisplayCallbacks
+import app.rly3h.voxwk.glass.GlassLink
+import app.rly3h.voxwk.glass.NativeTranslationDisplay
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
 import app.rly3h.voxwk.translate.ConversationTranslator
@@ -37,9 +42,11 @@ import app.rly3h.voxwk.translate.SpeechTranslator
 import app.rly3h.voxwk.translate.TranslatorCallbacks
 import app.rly3h.voxwk.translate.asrEnginesFor
 import app.rly3h.voxwk.translate.mediaOutputTypes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,9 +54,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import uniffi.translatecore.OpusDecoder
 import uniffi.translatecore.mtSupported
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
+
+/** What a Glass session holds besides the engine; released together when the session ends. */
+private class GlassSession(val link: GlassLink, val display: NativeTranslationDisplay, val decoder: OpusDecoder)
 
 /**
  * Owns a live session: its turns, the running engine, and the TTS handle.
@@ -111,6 +125,10 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   private var tts: TextToSpeech? = null
   private var translator: SpeechTranslator? = null
   private var startJob: Job? = null
+  private var glass: GlassSession? = null
+
+  // The input the running session captures from; the session log records its kind.
+  private var sessionInput: AudioInput = input
 
   init {
     tts = TextToSpeech(app) { }
@@ -196,24 +214,58 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         }
       }
 
+      // Glass: one link per session, held only while it runs, so the official App can have the Glass between sessions.
+      var link: GlassLink? = null
+      if (s.glassEnabled && s.glassAddress != null) {
+        status = SessionStatus.Message(R.string.status_glass_connecting)
+        val job = coroutineContext.job
+        var opened: GlassLink? = null
+        try {
+          link = withContext(Dispatchers.IO + NonCancellable) {
+            GlassLink.open(app, s.glassAddress).also { opened = it }
+          }
+        } catch (e: CancellationException) {
+          // Stopped during the connect: withContext drops the result for a cancelled caller, and the open sockets
+          // would keep the Glass from the next Start.
+          opened?.close()
+          throw e
+        } catch (e: IOException) {
+          // A failure still reaches a caller that Stop already cancelled; that screen has moved on.
+          if (job.isActive) failGlassConnect(e)
+          return@launch
+        } catch (e: SecurityException) {
+          if (job.isActive) failGlassConnect(e)
+          return@launch
+        }
+      }
+      val glassSession = link?.let {
+        GlassSession(it, NativeTranslationDisplay(it.gm, app.getString(R.string.glass_hud_title)), OpusDecoder())
+      }
+      glass = glassSession
+      sessionInput = if (glassSession != null) {
+        GlassAudioInput(glassSession.link, glassSession.decoder::decode, s.glassMic.pickupMode)
+      } else {
+        input
+      }
+
       // Conversation learns this from its router; Listen has no router, so check the outputs here.
       noEarphones = !conversation && !listenHasPrivateOutput(mediaOutputTypes(app))
       val engine: SpeechTranslator
       if (conversation) {
         // Create the router before the service starts: the service records the router
         // generation in onStartCommand to scope its onDestroy safety net to this session.
-        val router = AudioRouters.create(app)
+        val router = AudioRouters.create(app, if (glassSession != null) s.glassAddress else null)
         engine = if (useOnline) {
-          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, input, router)
+          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, sessionInput, router)
         } else {
-          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, input, mine, s.conversationPartner, router)
+          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, sessionInput, mine, s.conversationPartner, router)
         }
         speaking = false // every session starts on the partner's side; Speaking is pressed to talk
       } else {
         engine = when {
-          !useOnline -> OfflineTranslator(app, s, input, s.listenSource, mine)
-          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, input, s.listenSource)
-          else -> OpenAiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, input, s.listenSource)
+          !useOnline -> OfflineTranslator(app, s, sessionInput, s.listenSource, mine)
+          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource)
+          else -> OpenAiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource)
         }
       }
       translator = engine
@@ -222,8 +274,19 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
       RecordingService.onStopRequested = ::stop
       RecordingService.start(app)
       status = SessionStatus.Engine(if (useOnline) EngineStatus.Connecting else EngineStatus.Listening)
-      engine.start(viewModelScope, callbacksFor(engine))
+      val callbacks = callbacksFor(engine)
+      if (glassSession == null) {
+        engine.start(viewModelScope, callbacks)
+      } else {
+        glassSession.display.begin(conversation)
+        engine.start(viewModelScope, GlassDisplayCallbacks(callbacks, glassSession.display, s.glassDisplay))
+      }
     }
+  }
+
+  private fun failGlassConnect(e: Throwable) {
+    status = SessionStatus.Message(glassConnectFailureRes(e))
+    recording = false
   }
 
   private fun autoSpeakNow() = settings.value.autoSpeak
@@ -248,9 +311,22 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   override fun onCleared() {
     translator?.stop()
     translator = null
+    releaseGlass()
     releaseService()
     tts?.let { it.stop(); it.shutdown() }
     tts = null
+  }
+
+  /** On the app scope because [onCleared] cancels [viewModelScope], and the close calls block on IO. */
+  private fun releaseGlass() {
+    val session = glass ?: return
+    glass = null
+    (getApplication<Application>() as VoxwkApp).appScope.launch(Dispatchers.IO) {
+      session.display.end()
+      session.display.close()
+      session.link.close()
+      session.decoder.close()
+    }
   }
 
   private fun releaseService() {
@@ -270,7 +346,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         id = sessionId,
         startedAt = startedAt,
         mode = sessionMode.name,
-        input = input.kind.name,
+        input = sessionInput.kind.name,
         utterances = done.map {
           LoggedUtterance(
             it.transcript, it.src?.code, it.tgt.code, it.detected, it.translation!!,
@@ -337,6 +413,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         speaking = false
         partial = ""
         translator = null
+        releaseGlass()
         releaseService()
         status = error?.let { SessionStatus.Error(it) } ?: SessionStatus.Stopped(turns.size)
       }

@@ -56,3 +56,8 @@ internal sealed interface SessionStatus {
   data class Stopped(val turns: Int) : SessionStatus
   data class Error(val detail: String) : SessionStatus
 }
+
+/** SecurityException is a missing BLUETOOTH_CONNECT; any other failure means the Glass is held, off or out of range. */
+@StringRes
+fun glassConnectFailureRes(e: Throwable): Int =
+  if (e is SecurityException) R.string.status_glass_permission else R.string.status_glass_unavailable

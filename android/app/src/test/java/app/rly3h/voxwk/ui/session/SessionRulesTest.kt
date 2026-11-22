@@ -1,5 +1,6 @@
 package app.rly3h.voxwk.ui.session
 
+import app.rly3h.voxwk.R
 import app.rly3h.voxwk.lang.Language.EN
 import app.rly3h.voxwk.lang.Language.JA
 import app.rly3h.voxwk.lang.Language.ZH_HANS
@@ -13,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class SessionRulesTest {
   @Test
@@ -58,5 +60,15 @@ class SessionRulesTest {
       listOf<Any?>(Speaker.PARTNER, EngineStatus.Connecting),
       statusArgs(EngineStatus.Directional(Speaker.PARTNER, EngineStatus.Connecting)),
     )
+  }
+
+  @Test
+  fun glassConnectFailureNeedsPermissionOnlyForSecurityException() {
+    assertEquals(R.string.status_glass_permission, glassConnectFailureRes(SecurityException("denied")))
+  }
+
+  @Test
+  fun glassConnectFailureOtherwiseMeansUnavailable() {
+    assertEquals(R.string.status_glass_unavailable, glassConnectFailureRes(IOException("connect failed")))
   }
 }
