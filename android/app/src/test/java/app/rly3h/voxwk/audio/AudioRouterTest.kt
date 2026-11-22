@@ -57,37 +57,36 @@ class AudioRouterTest {
     assertFalse(listenHasPrivateOutput(emptyList()))
   }
 
-  private val glass = "AA:BB:CC:DD:EE:FF"
   private val sco = AudioDeviceInfo.TYPE_BLUETOOTH_SCO
   private val wired = AudioDeviceInfo.TYPE_WIRED_HEADSET
 
   @Test
-  fun glassScoBeatsWiredHeadsetWhenAddressMatches() {
-    val devices = listOf(wired to "", sco to glass)
-    assertEquals(MeDevice(1, ResolvedOutput.GLASS), pickMeDevice(devices, glass))
+  fun scoIsGlassInGlassSessionEvenWhenWiredHeadsetIsPresent() {
+    val types = listOf(wired, sco)
+    assertEquals(MeDevice(1, ResolvedOutput.GLASS), pickMeDevice(types, glassSession = true))
   }
 
   @Test
-  fun glassAddressMatchIgnoresCase() {
-    val devices = listOf(wired to "", sco to glass)
-    assertEquals(MeDevice(1, ResolvedOutput.GLASS), pickMeDevice(devices, glass.lowercase()))
+  fun scoIsEarphoneOutsideGlassSession() {
+    val types = listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, sco)
+    assertEquals(MeDevice(1, ResolvedOutput.EARPHONE), pickMeDevice(types, glassSession = false))
   }
 
   @Test
-  fun nonMatchingScoLosesToWiredHeadset() {
-    val devices = listOf(sco to "11:22:33:44:55:66", wired to "")
-    assertEquals(MeDevice(1, ResolvedOutput.EARPHONE), pickMeDevice(devices, glass))
-  }
-
-  @Test
-  fun scoIsEarphoneWithoutGlassAddress() {
-    val devices = listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER to "", sco to glass)
-    assertEquals(MeDevice(1, ResolvedOutput.EARPHONE), pickMeDevice(devices, null))
+  fun glassSessionWithoutScoFallsBackToEarphoneOrder() {
+    val types = listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, wired)
+    assertEquals(MeDevice(1, ResolvedOutput.EARPHONE), pickMeDevice(types, glassSession = true))
   }
 
   @Test
   fun noCommunicationDeviceGivesNoMeDevice() {
-    assertNull(pickMeDevice(emptyList(), glass))
-    assertNull(pickMeDevice(listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER to ""), glass))
+    assertNull(pickMeDevice(emptyList(), glassSession = true))
+    assertNull(pickMeDevice(listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER), glassSession = true))
+  }
+
+  @Test
+  fun glassOutputHoldsTheEchoGateLongerThanSpeaker() {
+    assertEquals(GLASS_ECHO_TAIL_MS, echoTailMs(ResolvedOutput.GLASS))
+    assertEquals(ECHO_TAIL_MS, echoTailMs(ResolvedOutput.SPEAKER))
   }
 }

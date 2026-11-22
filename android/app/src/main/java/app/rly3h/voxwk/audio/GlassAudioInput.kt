@@ -43,7 +43,9 @@ class GlassAudioInput(
   private val link: GlassLink,
   private val decode: (ByteArray) -> ByteArray,
   private val pickupMode: Int,
-  private val restartAfterMs: Long = 1000,
+  // Packets arrive every 20 ms, so 300 ms without one means the stream stopped; a longer wait only extends
+  // the deaf window.
+  private val restartAfterMs: Long = 300,
 ) : AudioInput {
   override val kind = InputKind.GLASSES
 

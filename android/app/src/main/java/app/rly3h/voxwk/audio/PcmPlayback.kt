@@ -116,7 +116,9 @@ internal class PcmPlayback(
       } finally {
         runCatching { track.release() }
       }
-      if (onSpeaker && !closed) delay(ECHO_TAIL_MS)
+      // Ending SCO now, before the tail, lets the Glass mic restart while the mic is still muted.
+      if (output == ResolvedOutput.GLASS) router.releaseCommunicationDevice()
+      if (onSpeaker && !closed) delay(echoTailMs(output))
     } finally {
       speakerBusy = false
     }

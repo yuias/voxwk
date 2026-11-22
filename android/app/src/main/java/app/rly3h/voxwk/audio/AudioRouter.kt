@@ -21,6 +21,17 @@ interface EchoGate {
 /** Reverb allowance after the last speaker or Glass sample, so the mic does not hear the tail as speech. */
 internal const val ECHO_TAIL_MS = 300L
 
+/**
+ * Echo hold after Glass playback. Ending SCO takes the Glass about 0.3 s to start recording on 0x92
+ * again (SCO-off latency, the restart stall in GlassAudioInput, then the resume), measured at about
+ * 0.65 s in all. Staying muted that long keeps that deaf window out of open time.
+ */
+internal const val GLASS_ECHO_TAIL_MS = 800L
+
+/** How long to stay muted after [output] finished playing. */
+internal fun echoTailMs(output: ResolvedOutput): Long =
+  if (output == ResolvedOutput.GLASS) GLASS_ECHO_TAIL_MS else ECHO_TAIL_MS
+
 /** Whether the mic can hear [output]: the speaker and the Glass are audible to it; earphones are not. */
 internal fun isEchoBusy(output: ResolvedOutput): Boolean =
   output == ResolvedOutput.SPEAKER || output == ResolvedOutput.GLASS
@@ -42,6 +53,12 @@ interface AudioRouter {
 
   /** Attributes every playback (AudioTrack and TTS) of the session must use so it follows routing. */
   val playbackAttributes: AudioAttributes
+
+  /**
+   * Drop the communication device so the OS ends Bluetooth SCO now, instead of 6 s after the last
+   * playback, and the next [routeTo] selects it again. Safe from any thread.
+   */
+  fun releaseCommunicationDevice()
 
   /** Built-in mic to pin capture to, or null. */
   fun builtinMic(): AudioDeviceInfo?
@@ -123,19 +140,18 @@ internal fun pickEarphoneType(types: List<Int>): Int? =
 internal data class MeDevice(val index: Int, val output: ResolvedOutput)
 
 /**
- * ME's output among the communication devices, given as (type, address) pairs: the SCO device whose
- * address equals [glassAddress] (ignoring case) is the Glass; otherwise the earphone order applies.
- * Returns the index into [devices]; null when there is none.
+ * ME's output among the communication device [types]. In a Glass session ([glassSession]) a Bluetooth SCO
+ * device is the Glass: Android hides its address (the SCO device reports a null or anonymized address),
+ * so it cannot be matched against the paired Glass. Otherwise the earphone order applies.
+ * Returns the index into [types]; null when there is none.
  */
-internal fun pickMeDevice(devices: List<Pair<Int, String>>, glassAddress: String?): MeDevice? {
-  if (glassAddress != null) {
-    val glass = devices.indexOfFirst { (type, address) ->
-      type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && address.equals(glassAddress, ignoreCase = true)
-    }
+internal fun pickMeDevice(types: List<Int>, glassSession: Boolean): MeDevice? {
+  if (glassSession) {
+    val glass = types.indexOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
     if (glass >= 0) return MeDevice(glass, ResolvedOutput.GLASS)
   }
-  val type = pickEarphoneType(devices.map { it.first }) ?: return null
-  return MeDevice(devices.indexOfFirst { it.first == type }, ResolvedOutput.EARPHONE)
+  val type = pickEarphoneType(types) ?: return null
+  return MeDevice(types.indexOf(type), ResolvedOutput.EARPHONE)
 }
 
 private val PRIVATE_MEDIA_TYPES = setOf(

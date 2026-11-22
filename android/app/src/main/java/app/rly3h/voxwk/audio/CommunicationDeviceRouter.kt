@@ -49,6 +49,12 @@ internal class CommunicationDeviceRouter(
     if (applied && me != null) me.second else ResolvedOutput.SPEAKER
   }
 
+  // routeTo re-selects the device: it compares against audioManager.communicationDevice, which after
+  // this call is the OS default again. The mode is left alone; only begin() and end() own it.
+  override fun releaseCommunicationDevice() = synchronized(routeLock) {
+    if (!ended.get()) audioManager.clearCommunicationDevice()
+  }
+
   override fun builtinMic(): AudioDeviceInfo? =
     audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
       .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
@@ -75,7 +81,7 @@ internal class CommunicationDeviceRouter(
 
   private fun findMeDevice(): Pair<AudioDeviceInfo, ResolvedOutput>? {
     val devices = audioManager.availableCommunicationDevices
-    val picked = pickMeDevice(devices.map { it.type to it.address }, glassAddress) ?: return null
+    val picked = pickMeDevice(devices.map { it.type }, glassAddress != null) ?: return null
     return devices[picked.index] to picked.output
   }
 
