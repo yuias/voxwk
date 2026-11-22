@@ -107,7 +107,6 @@
     <string name="history_turn_heading">%1$s · %2$s</string>
 
     <string name="settings_my_language">Your language</string>
-    <string name="settings_my_language_hint">The language you speak. The other person\'s language is chosen on the session screen.</string>
     <string name="settings_playback">Playback</string>
     <string name="settings_speak_for_me">Speak translations for me</string>
     <string name="settings_speak_for_partner">Speak translations for my partner</string>
@@ -159,7 +158,6 @@
     <string name="settings_test_failed">Test failed: %1$s</string>
     <string name="settings_idle_gap">Pause to split a turn</string>
     <string name="settings_models">Models</string>
-    <string name="settings_models_hint">Required for offline translation. Downloaded once and stored on this device.</string>
     <string name="models_download_required">Download models for current settings</string>
     <string name="models_all_required_present">All models for the current settings are downloaded.</string>
     <string name="models_in_use">%1$s · in use</string>

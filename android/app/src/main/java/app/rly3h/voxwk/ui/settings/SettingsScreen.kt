@@ -3,15 +3,10 @@ package app.rly3h.voxwk.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -96,14 +91,14 @@ internal fun SettingsPageScreen(page: SettingsPage, modifier: Modifier = Modifie
   }
 
   when (page) {
-    SettingsPage.LANGUAGE -> PaddedPage(modifier) { LanguageBody(vm) }
+    SettingsPage.LANGUAGE -> LanguagePage(modifier, vm)
     SettingsPage.PLAYBACK -> PlaybackPage(modifier, vm)
     SettingsPage.RECOGNITION -> RecognitionPage(modifier, vm)
-    SettingsPage.MODELS -> PaddedPage(modifier) { ModelsSection(vm) }
+    SettingsPage.MODELS -> ModelsSection(modifier, vm)
     SettingsPage.ONLINE -> OnlinePage(modifier, vm)
     SettingsPage.GLASS -> PaddedPage(modifier) { GlassSection(vm) }
     SettingsPage.TURNS -> TurnDetectionPage(modifier, vm)
-    SettingsPage.ABOUT -> PaddedPage(modifier) { AboutBody(vm) }
+    SettingsPage.ABOUT -> AboutPage(modifier, vm)
   }
 }
 
@@ -115,48 +110,4 @@ private fun PaddedPage(modifier: Modifier, content: @Composable ColumnScope.() -
     verticalArrangement = Arrangement.spacedBy(12.dp),
     content = content,
   )
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun LanguageBody(vm: SettingsViewModel) {
-  val s by vm.settings.collectAsStateWithLifecycle()
-  val recording = vm.recording
-  SectionTitle(stringResource(R.string.settings_my_language))
-  Text(
-    stringResource(R.string.settings_my_language_hint),
-    style = MaterialTheme.typography.bodySmall,
-    color = MaterialTheme.colorScheme.outline,
-  )
-  FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-    MY_LANGUAGES.forEach { lang ->
-      FilterChip(
-        selected = s.myLanguage == lang,
-        enabled = !recording,
-        onClick = { vm.onMyLanguageChange(lang) },
-        label = { Text(stringResource(lang.label)) },
-      )
-    }
-  }
-}
-
-@Composable
-private fun AboutBody(vm: SettingsViewModel) {
-  val mtInfo = vm.mtInfo
-
-  SectionTitle(stringResource(R.string.settings_about))
-  // Tight inner spacing keeps the version block together; the parent Column's
-  // 12.dp gap would otherwise scatter these one-line entries.
-  Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-    Text(
-      stringResource(R.string.settings_about_version, stringResource(R.string.app_name), vm.versionName, vm.gitHash),
-      style = MaterialTheme.typography.bodySmall,
-    )
-    mtInfo?.let { Text(it.systemInfo, style = MaterialTheme.typography.bodySmall) }
-  }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-  Text(text, style = MaterialTheme.typography.titleMedium)
 }

@@ -1,12 +1,16 @@
 package app.rly3h.voxwk.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,29 +27,18 @@ import app.rly3h.voxwk.data.Models
 
 /** The model list: size, in-use mark, and download / cancel / delete with the worker's progress. */
 @Composable
-internal fun ModelsSection(vm: SettingsViewModel = viewModel()) {
+internal fun ModelsSection(modifier: Modifier = Modifier, vm: SettingsViewModel = viewModel()) {
   val state by vm.models.collectAsStateWithLifecycle()
   // Not Compose state: read fresh on every composition.
   val recording = vm.recording
 
-  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Text(stringResource(R.string.settings_models), style = MaterialTheme.typography.titleMedium)
-    Text(
-      stringResource(R.string.settings_models_hint),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.outline,
-    )
+  Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
     Button(
       enabled = !vm.deleting && state.missingRequired.isNotEmpty(),
       onClick = vm::downloadRequiredModels,
+      modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     ) { Text(stringResource(R.string.models_download_required)) }
-    if (state.allRequiredPresent) {
-      Text(
-        stringResource(R.string.models_all_required_present),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.outline,
-      )
-    }
+    if (state.allRequiredPresent) SettingNote(stringResource(R.string.models_all_required_present))
     state.rows.forEach { row ->
       ModelRow(
         row = row,
@@ -57,14 +50,10 @@ internal fun ModelsSection(vm: SettingsViewModel = viewModel()) {
         onDelete = { vm.requestDelete(row.id) },
       )
     }
-    if (recording) {
-      Text(
-        stringResource(R.string.models_delete_locked),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.outline,
-      )
+    if (recording) SettingNote(stringResource(R.string.models_delete_locked))
+    vm.modelMessage?.let {
+      Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
     }
-    vm.modelMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
   }
 
   vm.pendingDelete?.let { id ->
@@ -90,28 +79,30 @@ private fun ModelRow(
   onCancel: () -> Unit,
   onDelete: () -> Unit,
 ) {
-  Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      Column(Modifier.weight(1f)) {
-        val name = if (row.inUse) stringResource(R.string.models_in_use, row.name) else row.name
-        Text(name, style = MaterialTheme.typography.bodyMedium)
-        Text(statusText(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-      }
-      if (row.active) {
-        TextButton(onClick = onCancel) { Text(stringResource(R.string.models_cancel)) }
-      } else {
-        TextButton(enabled = downloadEnabled, onClick = onDownload) { Text(stringResource(R.string.models_download)) }
-        TextButton(enabled = deleteEnabled, onClick = onDelete) { Text(stringResource(R.string.models_delete)) }
-      }
-    }
+  Column {
+    ListItem(
+      headlineContent = { Text(if (row.inUse) stringResource(R.string.models_in_use, row.name) else row.name) },
+      supportingContent = { Text(statusText(row)) },
+      trailingContent = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          if (row.active) {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.models_cancel)) }
+          } else {
+            TextButton(enabled = downloadEnabled, onClick = onDownload) { Text(stringResource(R.string.models_download)) }
+            TextButton(enabled = deleteEnabled, onClick = onDelete) { Text(stringResource(R.string.models_delete)) }
+          }
+        }
+      },
+    )
+    val progressModifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     when (val d = row.download) {
-      ModelDownload.Waiting -> LinearProgressIndicator(Modifier.fillMaxWidth())
+      ModelDownload.Waiting -> LinearProgressIndicator(progressModifier)
       is ModelDownload.Running ->
         // The size is unknown while unpacking, and when the server omits a length.
         if (d.phase == Models.PHASE_DOWNLOAD && d.total > 0) {
-          LinearProgressIndicator(progress = { d.bytes.toFloat() / d.total }, modifier = Modifier.fillMaxWidth())
+          LinearProgressIndicator(progress = { d.bytes.toFloat() / d.total }, modifier = progressModifier)
         } else {
-          LinearProgressIndicator(Modifier.fillMaxWidth())
+          LinearProgressIndicator(progressModifier)
         }
       else -> Unit
     }
