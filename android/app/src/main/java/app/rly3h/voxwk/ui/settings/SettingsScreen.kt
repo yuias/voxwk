@@ -2,6 +2,7 @@ package app.rly3h.voxwk.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -15,12 +16,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -39,8 +38,6 @@ import app.rly3h.voxwk.data.VadBounds
 import app.rly3h.voxwk.lang.JaRecognizer
 import app.rly3h.voxwk.lang.MY_LANGUAGES
 import app.rly3h.voxwk.lang.OnlineProvider
-
-private val RATES = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
 @Composable
 fun SettingsScreen(onOpen: (SettingsPage) -> Unit, modifier: Modifier = Modifier, vm: SettingsViewModel = viewModel()) {
@@ -110,21 +107,26 @@ internal fun SettingsPageScreen(page: SettingsPage, modifier: Modifier = Modifie
     }
   }
 
+  when (page) {
+    SettingsPage.LANGUAGE -> PaddedPage(modifier) { LanguageBody(vm) }
+    SettingsPage.PLAYBACK -> PlaybackPage(modifier, vm)
+    SettingsPage.RECOGNITION -> RecognitionPage(modifier, vm)
+    SettingsPage.MODELS -> PaddedPage(modifier) { ModelsSection(vm) }
+    SettingsPage.ONLINE -> PaddedPage(modifier) { OnlineBody(vm) }
+    SettingsPage.GLASS -> PaddedPage(modifier) { GlassSection(vm) }
+    SettingsPage.TURNS -> PaddedPage(modifier) { TurnsBody(vm) }
+    SettingsPage.ABOUT -> PaddedPage(modifier) { AboutBody(vm) }
+  }
+}
+
+// The layout of a page that has not moved to the shared rows yet.
+@Composable
+private fun PaddedPage(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
   Column(
     modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
-  ) {
-    when (page) {
-      SettingsPage.LANGUAGE -> LanguageBody(vm)
-      SettingsPage.PLAYBACK -> PlaybackBody(vm)
-      SettingsPage.RECOGNITION -> RecognitionBody(vm)
-      SettingsPage.MODELS -> ModelsSection(vm)
-      SettingsPage.ONLINE -> OnlineBody(vm)
-      SettingsPage.GLASS -> GlassSection(vm)
-      SettingsPage.TURNS -> TurnsBody(vm)
-      SettingsPage.ABOUT -> AboutBody(vm)
-    }
-  }
+    content = content,
+  )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -147,89 +149,6 @@ private fun LanguageBody(vm: SettingsViewModel) {
         label = { Text(stringResource(lang.label)) },
       )
     }
-  }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PlaybackBody(vm: SettingsViewModel) {
-  val s by vm.settings.collectAsStateWithLifecycle()
-
-  SectionTitle(stringResource(R.string.settings_playback))
-  Text(stringResource(R.string.settings_speech_rate), style = MaterialTheme.typography.bodyMedium)
-  FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-    RATES.forEach { r ->
-      FilterChip(
-        selected = s.speechRate == r,
-        onClick = { vm.onSpeechRateChange(r) },
-        label = { Text(stringResource(R.string.settings_speech_rate_value, r)) },
-      )
-    }
-  }
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    Text(stringResource(R.string.settings_speak_for_me), style = MaterialTheme.typography.bodyMedium)
-    Switch(checked = s.autoSpeak, onCheckedChange = vm::onAutoSpeakChange)
-  }
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    Text(stringResource(R.string.settings_speak_for_partner), style = MaterialTheme.typography.bodyMedium)
-    Switch(checked = s.autoSpeakPartner, onCheckedChange = vm::onAutoSpeakPartnerChange)
-  }
-}
-
-@Composable
-private fun RecognitionBody(vm: SettingsViewModel) {
-  val s by vm.settings.collectAsStateWithLifecycle()
-  val recording = vm.recording
-  val mtInfo = vm.mtInfo
-
-  SectionTitle(stringResource(R.string.settings_ja_recognition))
-  ChoiceRow(
-    selected = s.jaRecognizer == JaRecognizer.NEMOTRON,
-    enabled = !recording,
-    title = stringResource(R.string.settings_ja_nemotron),
-    description = stringResource(R.string.settings_ja_nemotron_desc),
-    onSelect = { vm.onJaRecognizerChange(JaRecognizer.NEMOTRON) },
-  )
-  ChoiceRow(
-    selected = s.jaRecognizer == JaRecognizer.SENSEVOICE,
-    enabled = !recording,
-    title = stringResource(R.string.settings_ja_sensevoice),
-    description = stringResource(R.string.settings_ja_sensevoice_desc),
-    onSelect = { vm.onJaRecognizerChange(JaRecognizer.SENSEVOICE) },
-  )
-
-  HorizontalDivider()
-
-  SectionTitle(stringResource(R.string.settings_translation))
-  ChoiceRow(
-    selected = s.mtModel == MtModel.PLAMO3_0_8B,
-    enabled = !recording,
-    title = stringResource(R.string.settings_mt_08b),
-    description = stringResource(R.string.settings_mt_08b_desc),
-    onSelect = { vm.onMtModelChange(MtModel.PLAMO3_0_8B) },
-  )
-  ChoiceRow(
-    selected = s.mtModel == MtModel.PLAMO3_2B,
-    enabled = !recording && (vm.mt2bPresent || s.mtModel == MtModel.PLAMO3_2B),
-    title = stringResource(R.string.settings_mt_2b),
-    description = stringResource(if (vm.mt2bPresent) R.string.settings_mt_2b_desc else R.string.settings_mt_2b_desc_missing),
-    onSelect = { vm.onMtModelChange(MtModel.PLAMO3_2B) },
-  )
-  // Attribution required by the PLaMo Community License.
-  Text(stringResource(R.string.settings_built_with_plamo), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-  if (mtInfo?.supported == false) {
-    Text(
-      stringResource(R.string.settings_mt_unsupported),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.error,
-    )
-  }
-  if (recording) {
-    Text(
-      stringResource(R.string.settings_locked_while_recording),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.outline,
-    )
   }
 }
 
