@@ -2,6 +2,7 @@ package app.rly3h.voxwk.ui.session
 
 import android.app.Application
 import android.speech.tts.TextToSpeech
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import app.rly3h.voxwk.data.speaks
 import app.rly3h.voxwk.glass.GlassDisplayCallbacks
 import app.rly3h.voxwk.glass.GlassLink
 import app.rly3h.voxwk.glass.NativeTranslationDisplay
+import app.rly3h.voxwk.glass.captureGlassScreenshot
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
 import app.rly3h.voxwk.translate.Audience
@@ -62,6 +64,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import uniffi.translatecore.OpusDecoder
 import uniffi.translatecore.mtSupported
@@ -132,6 +135,12 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   private var translator: SpeechTranslator? = null
   private var startJob: Job? = null
   private var glass: GlassSession? = null
+
+  /** True while a Glass session is running; [glass] itself is not observable. */
+  var glassActive by mutableStateOf(false)
+    private set
+  var capturingScreenshot by mutableStateOf(false)
+    private set
 
   // Listen speaks through these in a Glass session: the router for the Glass output, and the playback on it
   // (TTS offline, PCM online). [listenTts] is read from engine threads in [speak].
@@ -258,6 +267,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         GlassSession(it, NativeTranslationDisplay(it.gm, app.getString(R.string.glass_hud_title)), OpusDecoder())
       }
       glass = glassSession
+      glassActive = glassSession != null
       sessionInput = if (glassSession != null) {
         GlassAudioInput(glassSession.link, glassSession.decoder::decode, s.glassMic.pickupMode)
       } else {
@@ -352,6 +362,29 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     status = SessionStatus.Message(R.string.status_finishing)
   }
 
+  private var screenshotJob: Job? = null
+
+  fun onGlassScreenshot() {
+    val session = glass
+    if (session == null || capturingScreenshot) return
+    capturingScreenshot = true
+    screenshotJob = viewModelScope.launch {
+      try {
+        val app = getApplication<Application>()
+        val message = try {
+          runInterruptible(Dispatchers.IO) { captureGlassScreenshot(app, session.link) }
+          app.getString(R.string.screenshot_saved)
+        } catch (e: IOException) {
+          app.getString(R.string.screenshot_failed, e.message)
+        }
+        // After Stop the user has moved on, and the result would come without a context.
+        if (glass === session) Toast.makeText(app, message, Toast.LENGTH_SHORT).show()
+      } finally {
+        capturingScreenshot = false
+      }
+    }
+  }
+
   override fun onCleared() {
     translator?.stop()
     translator = null
@@ -376,6 +409,9 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   private fun releaseGlass() {
     val session = glass ?: return
     glass = null
+    glassActive = false
+    // The capture waits on its own idle timeout otherwise, and the button of the next session stays disabled.
+    screenshotJob?.cancel()
     (getApplication<Application>() as VoxwkApp).appScope.launch(Dispatchers.IO) {
       session.display.end()
       session.display.close()

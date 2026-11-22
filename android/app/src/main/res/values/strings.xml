@@ -49,6 +49,9 @@
     <string name="session_speak_off">Translations muted</string>
     <string name="session_speak_partner_on">Speak translations for my partner</string>
     <string name="session_speak_partner_off">Translations for my partner muted</string>
+    <string name="session_glass_screenshot">Capture the Glass screen</string>
+    <string name="screenshot_saved">Saved to Pictures/voxwk</string>
+    <string name="screenshot_failed">Screenshot failed: %1$s</string>
     <string name="session_speaking_button">Speaking (%1$s → %2$s)</string>
 
     <string name="session_online_needs_key">Add a %1$s API key in Settings to use Online mode.</string>

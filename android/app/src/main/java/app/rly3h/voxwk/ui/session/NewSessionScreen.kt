@@ -186,6 +186,11 @@ fun NewSessionScreen(modifier: Modifier = Modifier) {
         )
       }
       Row(verticalAlignment = Alignment.CenterVertically) {
+        if (vm.glassActive) {
+          IconButton(onClick = vm::onGlassScreenshot, enabled = !vm.capturingScreenshot) {
+            Icon(painterResource(R.drawable.ic_screenshot), contentDescription = stringResource(R.string.session_glass_screenshot))
+          }
+        }
         // The session outlives navigation, so starting a fresh one is an
         // explicit act rather than a side effect of leaving the screen.
         IconButton(onClick = vm::reset, enabled = !vm.recording && vm.turns.isNotEmpty()) {
