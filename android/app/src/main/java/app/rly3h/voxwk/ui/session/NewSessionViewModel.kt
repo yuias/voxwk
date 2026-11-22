@@ -12,9 +12,13 @@ import app.rly3h.voxwk.R
 import app.rly3h.voxwk.RecordingService
 import app.rly3h.voxwk.VoxwkApp
 import app.rly3h.voxwk.audio.AudioInput
+import app.rly3h.voxwk.audio.AudioRouter
 import app.rly3h.voxwk.audio.AudioRouters
+import app.rly3h.voxwk.audio.EchoMutedInput
 import app.rly3h.voxwk.audio.GlassAudioInput
+import app.rly3h.voxwk.audio.PcmPlayback
 import app.rly3h.voxwk.audio.PhoneAudioInput
+import app.rly3h.voxwk.audio.TtsPlayback
 import app.rly3h.voxwk.audio.listenHasPrivateOutput
 import app.rly3h.voxwk.data.AppSettings
 import app.rly3h.voxwk.data.LoggedUtterance
@@ -29,6 +33,7 @@ import app.rly3h.voxwk.glass.GlassLink
 import app.rly3h.voxwk.glass.NativeTranslationDisplay
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
+import app.rly3h.voxwk.translate.Audience
 import app.rly3h.voxwk.translate.ConversationTranslator
 import app.rly3h.voxwk.translate.EngineStatus
 import app.rly3h.voxwk.translate.GeminiTranslator
@@ -126,6 +131,12 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   private var translator: SpeechTranslator? = null
   private var startJob: Job? = null
   private var glass: GlassSession? = null
+
+  // Listen speaks through these in a Glass session: the router for the Glass output, and the playback on it
+  // (TTS offline, PCM online). [listenTts] is read from engine threads in [speak].
+  private var listenRouter: AudioRouter? = null
+  @Volatile private var listenTts: TtsPlayback? = null
+  private var listenPcm: PcmPlayback? = null
 
   // The input the running session captures from; the session log records its kind.
   private var sessionInput: AudioInput = input
@@ -248,24 +259,50 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         input
       }
 
-      // Conversation learns this from its router; Listen has no router, so check the outputs here.
-      noEarphones = !conversation && !listenHasPrivateOutput(mediaOutputTypes(app))
+      // Create the router before the service starts: the service records the router
+      // generation in onStartCommand to scope its onDestroy safety net to this session.
+      // Phone-only Listen has none: it speaks through the media TTS.
+      val router = if (conversation || glassSession != null) {
+        AudioRouters.create(app, if (glassSession != null) s.glassAddress else null)
+      } else {
+        null
+      }
+      // Conversation learns this from its router. Listen asks its own router with a Glass, and otherwise checks the outputs here.
+      noEarphones = when {
+        conversation -> false
+        router != null -> router.begin() == EngineStatus.NoEarphones
+        else -> !listenHasPrivateOutput(mediaOutputTypes(app))
+      }
+      var audioOut: ((ByteArray) -> Unit)? = null
+      if (!conversation && router != null) {
+        listenRouter = router
+        if (useOnline) {
+          val pcm = PcmPlayback(router, ::autoSpeakNow)
+          listenPcm = pcm
+          audioOut = { pcm.enqueue(Audience.ME, it) }
+          viewModelScope.launch { pcm.run() }
+          // The Glass mic hears the Glass playback far above speech.
+          sessionInput = EchoMutedInput(sessionInput) { pcm.speakerBusy }
+        } else {
+          val glassTts = TtsPlayback(app, router, ::autoSpeakNow, ::speechRateNow)
+          listenTts = glassTts
+          viewModelScope.launch { glassTts.run() }
+          sessionInput = EchoMutedInput(sessionInput) { glassTts.speakerBusy }
+        }
+      }
       val engine: SpeechTranslator
       if (conversation) {
-        // Create the router before the service starts: the service records the router
-        // generation in onStartCommand to scope its onDestroy safety net to this session.
-        val router = AudioRouters.create(app, if (glassSession != null) s.glassAddress else null)
         engine = if (useOnline) {
-          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, sessionInput, router)
+          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, sessionInput, router!!)
         } else {
-          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, sessionInput, mine, s.conversationPartner, router)
+          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, sessionInput, mine, s.conversationPartner, router!!)
         }
         speaking = false // every session starts on the partner's side; Speaking is pressed to talk
       } else {
         engine = when {
           !useOnline -> OfflineTranslator(app, s, sessionInput, s.listenSource, mine)
-          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource)
-          else -> OpenAiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource)
+          s.onlineProvider == OnlineProvider.GEMINI -> GeminiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource, audioOut = audioOut)
+          else -> OpenAiTranslator(app, apiKey!!, s, ::autoSpeakNow, mine, sessionInput, s.listenSource, audioOut = audioOut)
         }
       }
       translator = engine
@@ -311,10 +348,21 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   override fun onCleared() {
     translator?.stop()
     translator = null
+    releaseListenOutput()
     releaseGlass()
     releaseService()
     tts?.let { it.stop(); it.shutdown() }
     tts = null
+  }
+
+  /** Ends the Glass output before the link goes, so no playback is left writing to a closed session. */
+  private fun releaseListenOutput() {
+    listenTts?.close()
+    listenTts = null
+    listenPcm?.close()
+    listenPcm = null
+    listenRouter?.end()
+    listenRouter = null
   }
 
   /** On the app scope because [onCleared] cancels [viewModelScope], and the close calls block on IO. */
@@ -359,8 +407,16 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  /** Listen speaks only to a private output; Conversation engines speak through their own router. */
+  /**
+   * Listen speaks through the Glass router in a Glass session, and otherwise only to a private output;
+   * Conversation engines speak through their own router.
+   */
   private fun speak(text: String, tgt: Language) {
+    val glassTts = listenTts
+    if (glassTts != null) {
+      glassTts.speak(Audience.ME, text, tgt)
+      return
+    }
     val s = settings.value
     if (!s.autoSpeak || !listenHasPrivateOutput(mediaOutputTypes(getApplication()))) return
     val engine = tts ?: return
@@ -413,6 +469,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         speaking = false
         partial = ""
         translator = null
+        releaseListenOutput()
         releaseGlass()
         releaseService()
         status = error?.let { SessionStatus.Error(it) } ?: SessionStatus.Stopped(turns.size)
