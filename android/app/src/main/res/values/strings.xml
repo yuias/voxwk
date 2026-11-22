@@ -118,7 +118,7 @@
     <string name="settings_ja_nemotron_desc">Live transcript while you speak.</string>
     <string name="settings_ja_sensevoice">SenseVoice</string>
     <string name="settings_ja_sensevoice_desc">Higher accuracy for Japanese.</string>
-    <string name="settings_endpoint_hint">End of turn: how the streaming recognizer splits utterances. Applies to the next session; changing these reloads the model.</string>
+    <string name="settings_endpoint">End of turn</string>
     <string name="settings_endpoint_end_of_turn">Silence to end a turn</string>
     <string name="settings_endpoint_before_speech">Silence before speech</string>
     <string name="settings_endpoint_max_length">Max utterance length</string>
@@ -137,13 +137,12 @@
     <string name="settings_mt_unsupported">This device\'s CPU lacks the dot-product instructions the offline translator needs. Offline translation is unavailable; Online mode still works.</string>
     <string name="settings_locked_while_recording">Speech recognition and translation can\'t be changed while a session is recording.</string>
     <string name="settings_vad">Voice detection</string>
-    <string name="settings_vad_hint">Silero VAD splits speech into turns while recording. Robust to background noise. Applies to the next session; changing these reloads the detector.</string>
     <string name="settings_vad_silence">Silence to split a turn</string>
     <string name="settings_vad_sensitivity">Speech sensitivity (lower = more sensitive)</string>
     <string name="settings_vad_min_speech">Min speech length</string>
     <string name="settings_vad_max_segment">Max segment length</string>
     <string name="settings_online">Online translation</string>
-    <string name="settings_online_hint">Optional. When online, translation runs on a cloud model for low-latency speech-to-speech. Audio is sent to the provider and billed to your key. Offline stays the default; toggle Online next to the mic. Each provider stores its own key, encrypted on this device.</string>
+    <string name="settings_online_notice">Audio is sent to the provider and billed to your key.</string>
     <string name="settings_provider_openai">OpenAI Realtime</string>
     <string name="settings_provider_gemini">Gemini Live</string>
     <string name="settings_api_key">%1$s API key</string>
@@ -159,7 +158,6 @@
     <string name="settings_test_ok">Connection OK.</string>
     <string name="settings_test_failed">Test failed: %1$s</string>
     <string name="settings_idle_gap">Pause to split a turn</string>
-    <string name="settings_idle_gap_hint">How long a pause splits a turn online. Lower = more, shorter turns. Applies to both providers and to the next session.</string>
     <string name="settings_models">Models</string>
     <string name="settings_models_hint">Required for offline translation. Downloaded once and stored on this device.</string>
     <string name="models_download_required">Download models for current settings</string>
