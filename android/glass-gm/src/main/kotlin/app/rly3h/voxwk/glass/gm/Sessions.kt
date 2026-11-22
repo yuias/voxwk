@@ -8,7 +8,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Receives every byte crossing a link, for the raw hex capture that B1 depends on. */
+/**
+ * Receives every byte crossing a link, for raw hex captures. The official App cannot run alongside this client, so
+ * its traffic cannot be observed from the side.
+ */
 fun interface WireTap {
     fun onBytes(outgoing: Boolean, bytes: ByteArray)
 }
