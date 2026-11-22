@@ -102,8 +102,12 @@ fun SettingsScreen(modifier: Modifier = Modifier, vm: SettingsViewModel = viewMo
       }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text(stringResource(R.string.session_speak_on), style = MaterialTheme.typography.bodyMedium)
+      Text(stringResource(R.string.settings_speak_for_me), style = MaterialTheme.typography.bodyMedium)
       Switch(checked = s.autoSpeak, onCheckedChange = vm::onAutoSpeakChange)
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text(stringResource(R.string.settings_speak_for_partner), style = MaterialTheme.typography.bodyMedium)
+      Switch(checked = s.autoSpeakPartner, onCheckedChange = vm::onAutoSpeakPartnerChange)
     }
 
     HorizontalDivider()

@@ -47,6 +47,8 @@
     <string name="session_models_loading">Loading models</string>
     <string name="session_speak_on">Speak translations aloud</string>
     <string name="session_speak_off">Translations muted</string>
+    <string name="session_speak_partner_on">Speak translations for my partner</string>
+    <string name="session_speak_partner_off">Translations for my partner muted</string>
     <string name="session_speaking_button">Speaking (%1$s → %2$s)</string>
 
     <string name="session_online_needs_key">Add a %1$s API key in Settings to use Online mode.</string>
@@ -104,7 +106,9 @@
     <string name="settings_my_language">Your language</string>
     <string name="settings_my_language_hint">The language you speak. The other person\'s language is chosen on the session screen.</string>
     <string name="settings_playback">Playback</string>
-    <string name="settings_speech_rate">Speech rate</string>
+    <string name="settings_speak_for_me">Speak translations for me</string>
+    <string name="settings_speak_for_partner">Speak translations for my partner</string>
+    <string name="settings_speech_rate">Speech rate for me</string>
     <string name="settings_speech_rate_value">%1$sx</string>
     <string name="settings_ja_recognition">Japanese recognition</string>
     <string name="settings_ja_nemotron">Nemotron 3.5</string>

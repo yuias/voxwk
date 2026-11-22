@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -294,8 +296,18 @@ fun NewSessionScreen(modifier: Modifier = Modifier) {
         )
       }
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        // Mirror the speak toggle's footprint on the left so the mic stays centered.
-        Spacer(Modifier.size(48.dp))
+        // Listen mirrors the speak toggle's footprint on the left so the mic stays centered.
+        if (conversation) {
+          SpeakToggle(
+            checked = settings.autoSpeakPartner,
+            onCheckedChange = vm::onAutoSpeakPartnerChange,
+            onDescription = R.string.session_speak_partner_on,
+            offDescription = R.string.session_speak_partner_off,
+            badge = settings.conversationPartner.badge,
+          )
+        } else {
+          Spacer(Modifier.size(48.dp))
+        }
         Spacer(Modifier.weight(1f))
         Box(contentAlignment = Alignment.Center) {
           Surface(
@@ -326,14 +338,35 @@ fun NewSessionScreen(modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.weight(1f))
         // Speak-aloud toggle, beside the mic it relates to.
-        IconToggleButton(checked = settings.autoSpeak, onCheckedChange = vm::onAutoSpeakChange) {
-          Icon(
-            painterResource(if (settings.autoSpeak) R.drawable.ic_volume_up else R.drawable.ic_volume_off),
-            contentDescription = stringResource(if (settings.autoSpeak) R.string.session_speak_on else R.string.session_speak_off),
-          )
-        }
+        SpeakToggle(
+          checked = settings.autoSpeak,
+          onCheckedChange = vm::onAutoSpeakChange,
+          onDescription = R.string.session_speak_on,
+          offDescription = R.string.session_speak_off,
+          badge = if (conversation) mine.badge else null,
+        )
       }
     }
+  }
+}
+
+/** The badge tells the two toggles of Conversation apart; Listen has one and passes none. */
+@Composable
+private fun SpeakToggle(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+  @StringRes onDescription: Int,
+  @StringRes offDescription: Int,
+  badge: String?,
+) {
+  Column(Modifier.width(48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    IconToggleButton(checked = checked, onCheckedChange = onCheckedChange) {
+      Icon(
+        painterResource(if (checked) R.drawable.ic_volume_up else R.drawable.ic_volume_off),
+        contentDescription = stringResource(if (checked) onDescription else offDescription),
+      )
+    }
+    badge?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
   }
 }
 

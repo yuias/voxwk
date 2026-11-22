@@ -174,6 +174,10 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
     viewModelScope.launch { repository.update { it.copy(autoSpeak = value) } }
   }
 
+  fun onAutoSpeakPartnerChange(value: Boolean) {
+    viewModelScope.launch { repository.update { it.copy(autoSpeakPartner = value) } }
+  }
+
   fun onOnlineChange(value: Boolean) {
     viewModelScope.launch { repository.update { it.copy(onlineEnabled = value) } }
   }

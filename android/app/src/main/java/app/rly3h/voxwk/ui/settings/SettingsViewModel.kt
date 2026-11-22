@@ -333,6 +333,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     viewModelScope.launch { repository.update { it.copy(autoSpeak = value) } }
   }
 
+  fun onAutoSpeakPartnerChange(value: Boolean) {
+    viewModelScope.launch { repository.update { it.copy(autoSpeakPartner = value) } }
+  }
+
   fun onVadChange(transform: (VadParams) -> VadParams) {
     viewModelScope.launch { repository.update { it.copy(vad = transform(it.vad)) } }
   }
