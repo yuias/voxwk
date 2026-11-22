@@ -114,4 +114,73 @@ class NativeTranslationDisplayTest {
     Thread.sleep(200)
     assertEquals(1, received.size)
   }
+
+  // The idle timeout is shortened to keep the real-time wait small; the 15 s default is not exercised.
+  private fun idleDisplay(ms: Long) = NativeTranslationDisplay(session, "voxwk", ms)
+
+  private fun commands() = received.map { it.command }
+
+  @Test
+  fun closesTheUiAfterTheIdleTimeout() {
+    idleDisplay(200).use {
+      it.begin(false)
+      it.show("Bonjour", "", false)
+      awaitFrames(3)
+      assertEquals(listOf(Commands.TR_START, Commands.TR_PROVISIONAL, Commands.TR_STOP), commands())
+    }
+  }
+
+  @Test
+  fun nextUpdateAfterIdleReopensTheUiFirst() {
+    idleDisplay(200).use {
+      it.begin(false)
+      it.show("Bonjour", "", false)
+      awaitFrames(3)
+      it.show("Bonjour", "こんにちは", true)
+      awaitFrames(5)
+      assertEquals(
+        listOf(Commands.TR_START, Commands.TR_PROVISIONAL, Commands.TR_STOP, Commands.TR_START, Commands.TR_FINAL),
+        commands(),
+      )
+      assertEquals("voxwk", received[3].tlvs.single().text)
+    }
+  }
+
+  @Test
+  fun updatesWithinTheTimeoutKeepTheUiOpen() {
+    idleDisplay(500).use {
+      it.begin(false)
+      // Five updates 200 ms apart span 1 s, so the timeout must restart on each one to stay open.
+      repeat(5) { i ->
+        Thread.sleep(200)
+        it.show("Bonjour", "", i == 4)
+      }
+      awaitFrames(6)
+      assertTrue(Commands.TR_STOP !in commands())
+    }
+  }
+
+  @Test
+  fun endAfterIdleCloseSendsNothingMore() {
+    idleDisplay(100).use {
+      it.begin(false)
+      awaitFrames(2)
+      it.end()
+      Thread.sleep(200)
+      assertEquals(listOf(Commands.TR_START, Commands.TR_STOP), commands())
+    }
+  }
+
+  @Test
+  fun sendsNothingAfterCloseEvenWhenTheIdleTimeoutPasses() {
+    val d = idleDisplay(200)
+    d.begin(false)
+    d.close()
+    awaitFrames(1)
+    Thread.sleep(500)
+    d.show("Bonjour", "こんにちは", true)
+    assertEquals(listOf(Commands.TR_START), commands())
+    Thread.sleep(100)
+    assertEquals(1, received.size)
+  }
 }
