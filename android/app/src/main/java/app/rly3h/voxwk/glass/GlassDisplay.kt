@@ -1,6 +1,7 @@
 package app.rly3h.voxwk.glass
 
 import app.rly3h.voxwk.translate.LiveTurn
+import app.rly3h.voxwk.translate.Speaker
 import app.rly3h.voxwk.translate.TranslatorCallbacks
 
 /** What the Glass HUD renders. The transport behind it is chosen separately. */
@@ -23,11 +24,15 @@ enum class GlassDisplayMode { TRANSLATION_ONLY, SOURCE_AND_TRANSLATION }
  * dropped; the next one after the interval carries the latest text, and the turn's final always
  * follows, so nothing is lost. A final is sent at once. The Glass link rate-limits writes, hence
  * the interval.
+ *
+ * With [showMine] false, Conversation events of [Speaker.ME] are still delegated but not shown, so
+ * the HUD keeps the partner's last text. Hidden events do not count toward the provisional interval.
  */
 class GlassDisplayCallbacks(
   private val inner: TranslatorCallbacks,
   private val display: GlassDisplay,
   private val mode: GlassDisplayMode,
+  private val showMine: Boolean = true,
   private val minProvisionalIntervalMs: Long = 250,
   private val clock: () -> Long = System::currentTimeMillis,
 ) : TranslatorCallbacks by inner {
@@ -40,6 +45,7 @@ class GlassDisplayCallbacks(
 
   override fun onTurnStart(turn: LiveTurn) {
     inner.onTurnStart(turn)
+    if (hidden(turn.speaker)) return
     synchronized(lock) {
       turns[turn.id] = Shown(turn.transcript, turn.translation.orEmpty())
       provisional(turn.transcript, turn.translation.orEmpty())
@@ -70,6 +76,14 @@ class GlassDisplayCallbacks(
     if (text.isEmpty()) return
     synchronized(lock) { provisional(text, "") }
   }
+
+  override fun onPartial(text: String, speaker: Speaker) {
+    inner.onPartial(text, speaker)
+    if (text.isEmpty() || hidden(speaker)) return
+    synchronized(lock) { provisional(text, "") }
+  }
+
+  private fun hidden(speaker: Speaker?) = !showMine && speaker == Speaker.ME
 
   private fun provisional(source: String, translation: String) {
     val now = clock()

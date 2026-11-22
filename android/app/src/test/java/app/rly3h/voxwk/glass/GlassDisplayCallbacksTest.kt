@@ -3,6 +3,7 @@ package app.rly3h.voxwk.glass
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.translate.EngineStatus
 import app.rly3h.voxwk.translate.LiveTurn
+import app.rly3h.voxwk.translate.Speaker
 import app.rly3h.voxwk.translate.TranslatorCallbacks
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -48,11 +49,24 @@ class GlassDisplayCallbacksTest {
   private val inner = RecordingInner()
   private val display = FakeDisplay()
 
-  private fun callbacks(mode: GlassDisplayMode = GlassDisplayMode.SOURCE_AND_TRANSLATION) =
-    GlassDisplayCallbacks(inner, display, mode, minProvisionalIntervalMs = 250, clock = { now })
+  private fun callbacks(
+    mode: GlassDisplayMode = GlassDisplayMode.SOURCE_AND_TRANSLATION,
+    showMine: Boolean = true,
+  ) = GlassDisplayCallbacks(inner, display, mode, showMine, minProvisionalIntervalMs = 250, clock = { now })
 
-  private fun turn(id: Long, transcript: String = "") =
-    LiveTurn(id = id, transcript = transcript, src = Language.EN, tgt = Language.JA, detected = "", at = 0)
+  private fun turn(id: Long, transcript: String = "", speaker: Speaker? = null) =
+    LiveTurn(
+      id = id, transcript = transcript, src = Language.EN, tgt = Language.JA, detected = "", at = 0,
+      speaker = speaker,
+    )
+
+  private fun playTurn(cb: GlassDisplayCallbacks, speaker: Speaker?) {
+    cb.onTurnStart(turn(1, "good morning", speaker))
+    now += 300
+    cb.onTurnUpdate(1, translation = "おはよう")
+    now += 300
+    cb.onTurnComplete(1)
+  }
 
   @Test
   fun delegatesEveryCallbackToInner() {
@@ -152,5 +166,67 @@ class GlassDisplayCallbacksTest {
       listOf(Shown("hi", "", false), Shown("hi", "やあ", true)),
       display.shown,
     )
+  }
+
+  @Test
+  fun hiddenTaggedPartialIsDelegatedAndNotShown() {
+    callbacks(showMine = false).onPartial("こんに", Speaker.ME)
+    assertEquals(emptyList<Shown>(), display.shown)
+    assertEquals(listOf("partial:こんに"), inner.calls)
+  }
+
+  @Test
+  fun partnerPartialIsShownWhenMineIsHidden() {
+    callbacks(showMine = false).onPartial("hel", Speaker.PARTNER)
+    assertEquals(listOf(Shown("hel", "", false)), display.shown)
+  }
+
+  @Test
+  fun hiddenTurnIsDelegatedAndNotShown() {
+    playTurn(callbacks(showMine = false), Speaker.ME)
+    assertEquals(emptyList<Shown>(), display.shown)
+    assertEquals(listOf("start:1", "update:1:null:おはよう", "complete:1"), inner.calls)
+  }
+
+  @Test
+  fun partnerTurnIsShownAsWhenMineIsShown() {
+    playTurn(callbacks(showMine = false), Speaker.PARTNER)
+    val hidingMine = display.shown.toList()
+    display.shown.clear()
+    now = 0
+    playTurn(callbacks(showMine = true), Speaker.PARTNER)
+    assertEquals(display.shown, hidingMine)
+  }
+
+  @Test
+  fun listenTurnIsShownWhenMineIsHidden() {
+    playTurn(callbacks(showMine = false), null)
+    assertEquals(Shown("good morning", "おはよう", true), display.shown.last())
+  }
+
+  @Test
+  fun hiddenEventsLeaveTheProvisionalIntervalAlone() {
+    val cb = callbacks(showMine = false)
+    now = 0
+    cb.onPartial("a", Speaker.ME)
+    now = 100
+    cb.onPartial("b", Speaker.PARTNER)
+    assertEquals(listOf(Shown("b", "", false)), display.shown)
+  }
+
+  @Test
+  fun partnerFinalIsTranslationOnlyWhenMineIsHidden() {
+    playTurn(callbacks(GlassDisplayMode.TRANSLATION_ONLY, showMine = false), Speaker.PARTNER)
+    assertEquals(Shown("", "おはよう", true), display.shown.last())
+  }
+
+  @Test
+  fun mineIsShownByDefault() {
+    val cb = callbacks()
+    cb.onPartial("x", Speaker.ME)
+    assertEquals(listOf(Shown("x", "", false)), display.shown)
+    display.shown.clear()
+    playTurn(cb, Speaker.ME)
+    assertEquals(Shown("good morning", "おはよう", true), display.shown.last())
   }
 }

@@ -85,6 +85,12 @@ interface TranslatorCallbacks {
   /** Live, not-yet-finalized transcript (streaming recognizers); "" clears it. */
   fun onPartial(text: String)
 
+  /**
+   * Conversation: [onPartial] for [speaker]'s direction, the direction of the chunk the text was decoded from. The
+   * default drops the tag, so only a callback that needs it (the Glass display) overrides this.
+   */
+  fun onPartial(text: String, speaker: Speaker) = onPartial(text)
+
   fun onStatus(status: EngineStatus)
 
   /** Speak [text] in [tgt] via the OS TTS (offline path only). */

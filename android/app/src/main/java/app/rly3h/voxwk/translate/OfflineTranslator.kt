@@ -417,7 +417,7 @@ internal class OfflineTranslator(
           continue
         }
         current = r.text
-        withContext(Dispatchers.Main) { cb.onPartial(r.text) }
+        withContext(Dispatchers.Main) { cb.onPartial(r.text, chunk.speaker) }
         if (r.endpoint) {
           val t = r.text.trim()
           current = ""
@@ -491,7 +491,7 @@ internal class OfflineTranslator(
         utterances.trySend(Utterance.Segment(pcm, speaker))
       }
 
-      override suspend fun onPartial(text: String) = withContext(Dispatchers.Main) { cb.onPartial(text) }
+      override suspend fun onPartial(text: String) = withContext(Dispatchers.Main) { cb.onPartial(text, streamSpeaker) }
 
       override suspend fun onText(text: String, speaker: Speaker) {
         utterances.trySend(Utterance.Text(text, speaker))

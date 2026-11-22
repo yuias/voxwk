@@ -331,7 +331,7 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
         engine.start(viewModelScope, callbacks)
       } else {
         glassSession.display.begin(conversation)
-        engine.start(viewModelScope, GlassDisplayCallbacks(callbacks, glassSession.display, s.glassDisplay))
+        engine.start(viewModelScope, GlassDisplayCallbacks(callbacks, glassSession.display, s.glassDisplay, showMine = s.glassShowMine))
       }
     }
   }
