@@ -336,4 +336,7 @@ dependencies {
   // Online mode (OpenAI Realtime): WebSocket transport + on-device API-key encryption.
   implementation(libs.okhttp)
   implementation(libs.tink.android)
+
+  // Glass: shared GM codec
+  implementation(project(":glass-gm"))
 }
