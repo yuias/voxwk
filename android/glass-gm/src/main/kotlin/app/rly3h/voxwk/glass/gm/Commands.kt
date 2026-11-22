@@ -7,6 +7,9 @@ object Commands {
     const val DEVICE_INFO = 0x02
     const val DEVICE_STATUS = 0x06
     const val AUDIO_PROCESSING = 0x2F
+    const val SCREENSHOT_REQUEST = 0x65
+    const val SCREENSHOT_UPLOAD = 0x66
+    const val SCREENSHOT_RESEND = 0x6A
 
     const val TRANSLATION = 0x03
     const val TR_START = 0x01
