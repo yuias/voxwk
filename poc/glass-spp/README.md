@@ -36,6 +36,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
    and translation text, either of which may be empty. The JSON toggle switches between raw UTF-8 and `\u` escapes.
    **Burst provisional** sends unacknowledged provisional updates at the given rate. `03/0C` selects the recording
    source.
+8. **SCO on / Tone / SCO off** route communication audio to the glasses over HFP, play a 1.5 s 1 kHz tone on the
+   voice-communication stream, and route it back. Run them while recording to see what happens to the recording link.
 
 Captures are written to the app's external files directory:
 

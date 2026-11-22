@@ -9,6 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -51,6 +56,8 @@ import androidx.compose.ui.unit.sp
 import app.rly3h.voxwk.glass.gm.Commands
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.PI
+import kotlin.math.sin
 
 @SuppressLint("MissingPermission") // Every Bluetooth call is gated on hasPermission.
 class MainActivity : ComponentActivity() {
@@ -114,6 +121,47 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private val audio by lazy { getSystemService(AudioManager::class.java) }
+
+    // HFP/SCO is a separate link from SPP: route communication audio to the glasses and see whether the SPP
+    // recording stream keeps flowing (microphone ownership) and what the glasses play.
+    private fun scoOn() {
+        val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            ?: run {
+                log("SCO: no Bluetooth SCO device among ${audio.availableCommunicationDevices.map { it.productName }}")
+                return
+            }
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        val ok = audio.setCommunicationDevice(sco)
+        log("SCO on ${sco.productName}: set=$ok, now ${audio.communicationDevice?.productName} type=${audio.communicationDevice?.type}")
+    }
+
+    private fun scoOff() {
+        audio.clearCommunicationDevice()
+        audio.mode = AudioManager.MODE_NORMAL
+        log("SCO off: now ${audio.communicationDevice?.productName} type=${audio.communicationDevice?.type}")
+    }
+
+    // 1.5 s of 1 kHz on the voice-communication stream, which follows the communication device.
+    private fun tone() {
+        val rate = 16_000
+        val pcm = ShortArray(rate * 3 / 2) { (sin(2 * PI * 1000 * it / rate) * 8000).toInt().toShort() }
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
+            .setAudioFormat(
+                AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build(),
+            )
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(pcm.size * 2)
+            .build()
+        track.write(pcm, 0, pcm.size)
+        track.play()
+        log("tone playing on ${track.routedDevice?.productName} type=${track.routedDevice?.type}")
+        Thread.sleep(1700)
+        track.release()
+    }
+
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun Screen() {
@@ -163,6 +211,11 @@ class MainActivity : ComponentActivity() {
                     FilterChip(compact, { compact = !compact }, { Text(if (compact) "compact" else "legacy") })
                     Button({ bg { link.startRecording(compact) } }) { Text("Rec start") }
                     Button({ bg { link.stopRecording() } }) { Text("Rec stop") }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button({ bg { scoOn() } }) { Text("SCO on") }
+                    Button({ bg { tone() } }) { Text("Tone") }
+                    Button({ bg { scoOff() } }) { Text("SCO off") }
                 }
 
                 HorizontalDivider()
