@@ -1,5 +1,6 @@
 package app.rly3h.voxwk.data
 
+import app.rly3h.voxwk.glass.GlassDisplayMode
 import app.rly3h.voxwk.lang.JaRecognizer
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
@@ -101,5 +102,50 @@ class SettingsLogicTest {
     assertEquals(true, s.autoSpeak)
     assertEquals(1.0f, s.speechRate)
     assertEquals(DEFAULT_ONLINE_IDLE_GAP_MS, s.onlineIdleGapMs)
+  }
+
+  @Test
+  fun emptyPrefsGiveGlassDefaults() {
+    val s = parseSettings(emptyMap())
+    assertEquals(false, s.glassEnabled)
+    assertNull(s.glassAddress)
+    assertEquals(GlassMic.FRONT, s.glassMic)
+    assertEquals(GlassDisplayMode.SOURCE_AND_TRANSLATION, s.glassDisplay)
+  }
+
+  @Test
+  fun storedGlassValuesAreKept() {
+    val s = parseSettings(
+      mapOf(
+        "glassEnabled" to true,
+        "glassAddress" to "00:11:22:AA:BB:CC",
+        "glassMic" to "ALL_AROUND",
+        "glassDisplay" to "TRANSLATION_ONLY",
+      ),
+    )
+    assertEquals(true, s.glassEnabled)
+    assertEquals("00:11:22:AA:BB:CC", s.glassAddress)
+    assertEquals(GlassMic.ALL_AROUND, s.glassMic)
+    assertEquals(GlassDisplayMode.TRANSLATION_ONLY, s.glassDisplay)
+  }
+
+  @Test
+  fun unknownGlassEnumStringGivesItsDefault() {
+    val s = parseSettings(mapOf("glassMic" to "bogus", "glassDisplay" to "bogus"))
+    assertEquals(GlassMic.FRONT, s.glassMic)
+    assertEquals(GlassDisplayMode.SOURCE_AND_TRANSLATION, s.glassDisplay)
+  }
+
+  @Test
+  fun malformedGlassAddressGivesNull() {
+    assertNull(parseSettings(mapOf("glassAddress" to "aa:bb")).glassAddress)
+    assertNull(parseSettings(mapOf("glassAddress" to "00:11:22:33:44:5G")).glassAddress)
+    assertNull(parseSettings(mapOf("glassAddress" to "00:11:22:aa:bb:cc")).glassAddress)
+  }
+
+  @Test
+  fun glassMicPickupModes() {
+    assertEquals(0, GlassMic.FRONT.pickupMode)
+    assertEquals(1, GlassMic.ALL_AROUND.pickupMode)
   }
 }

@@ -78,5 +78,10 @@ class SettingsRepository(context: Context) {
     prefs[floatPreferencesKey(SettingsKeys.EP_RULE1)] = s.endpoint.rule1
     prefs[floatPreferencesKey(SettingsKeys.EP_RULE2)] = s.endpoint.rule2
     prefs[floatPreferencesKey(SettingsKeys.EP_RULE3)] = s.endpoint.rule3
+    prefs[booleanPreferencesKey(SettingsKeys.GLASS_ENABLED)] = s.glassEnabled
+    val glassAddress = stringPreferencesKey(SettingsKeys.GLASS_ADDRESS)
+    if (s.glassAddress == null) prefs.remove(glassAddress) else prefs[glassAddress] = s.glassAddress
+    prefs[stringPreferencesKey(SettingsKeys.GLASS_MIC)] = s.glassMic.name
+    prefs[stringPreferencesKey(SettingsKeys.GLASS_DISPLAY)] = s.glassDisplay.name
   }
 }

@@ -1,5 +1,6 @@
 package app.rly3h.voxwk.data
 
+import app.rly3h.voxwk.glass.GlassDisplayMode
 import app.rly3h.voxwk.lang.JaRecognizer
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.MY_LANGUAGES
@@ -53,6 +54,15 @@ object OnlineBounds {
 
 const val DEFAULT_ONLINE_IDLE_GAP_MS = 1200
 
+/** Glass microphone pickup; [pickupMode] is the value the Glass takes on the wire. */
+enum class GlassMic(val pickupMode: Int) {
+  FRONT(0), // the only mode measured on the device
+  ALL_AROUND(1), // the documented 3-mic conference mode
+}
+
+// The form BluetoothDevice.getAddress returns; BluetoothAdapter.checkBluetoothAddress is not callable in JVM tests.
+private val GLASS_ADDRESS = Regex("^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
+
 /** Engines take a snapshot of this at session start, not a live object. */
 data class AppSettings(
   val myLanguage: Language = Language.JA, // one of MY_LANGUAGES
@@ -78,6 +88,10 @@ data class AppSettings(
   val onlineIdleGapMs: Int = DEFAULT_ONLINE_IDLE_GAP_MS,
   val vad: VadParams = VadParams(),
   val endpoint: EndpointParams = EndpointParams(),
+  val glassEnabled: Boolean = false,
+  val glassAddress: String? = null, // a session uses the Glass when glassEnabled && glassAddress != null
+  val glassMic: GlassMic = GlassMic.FRONT,
+  val glassDisplay: GlassDisplayMode = GlassDisplayMode.SOURCE_AND_TRANSLATION,
 )
 
 private val DEFAULT_PARTNER = Language.EN
@@ -102,6 +116,10 @@ internal object SettingsKeys {
   const val EP_RULE1 = "endpointRule1"
   const val EP_RULE2 = "endpointRule2"
   const val EP_RULE3 = "endpointRule3"
+  const val GLASS_ENABLED = "glassEnabled"
+  const val GLASS_ADDRESS = "glassAddress"
+  const val GLASS_MIC = "glassMic"
+  const val GLASS_DISPLAY = "glassDisplay"
 }
 
 private inline fun <reified E : Enum<E>> Map<String, Any?>.enumOr(key: String, default: E): E =
@@ -142,5 +160,9 @@ fun parseSettings(prefs: Map<String, Any?>): AppSettings {
       rule2 = prefs[SettingsKeys.EP_RULE2] as? Float ?: ep.rule2,
       rule3 = prefs[SettingsKeys.EP_RULE3] as? Float ?: ep.rule3,
     ),
+    glassEnabled = prefs[SettingsKeys.GLASS_ENABLED] as? Boolean ?: false,
+    glassAddress = (prefs[SettingsKeys.GLASS_ADDRESS] as? String)?.takeIf { GLASS_ADDRESS.matches(it) },
+    glassMic = prefs.enumOr(SettingsKeys.GLASS_MIC, GlassMic.FRONT),
+    glassDisplay = prefs.enumOr(SettingsKeys.GLASS_DISPLAY, GlassDisplayMode.SOURCE_AND_TRANSLATION),
   )
 }
