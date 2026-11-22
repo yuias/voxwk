@@ -29,6 +29,22 @@ class GmCodecTest {
     }
 
     @Test
+    fun acceptsContinuationFramesHeadedWithFirstHead() {
+        // Firmware 1.0.4.83 answered 01/06 with a 512-byte and a 51-byte frame, both headed 0xFA.
+        val body = Tlv.concat(Tlv.int16(1), Tlv.bytes(ByteArray(600) { 0x41 }))
+        val frames = Gm.encode(1, 0x0F, 0x28, body)
+        val second = frames[1].copyOf().also { it[0] = 0xFA.toByte() }
+        val sum = Gm.checksum(second, 0, second.size - 2)
+        second[second.size - 2] = (sum shr 8).toByte()
+        second[second.size - 1] = sum.toByte()
+        val next = Gm.encode(2, 1, 0x21, Tlv.int8(0)).single()
+        val events = GmStreamParser().feed(frames[0] + second + next)
+        assertEquals(2, events.size)
+        assertArrayEquals(body, (events[0] as GmEvent.Message).message.body)
+        assertEquals(0x21, (events[1] as GmEvent.Message).message.command)
+    }
+
+    @Test
     fun streamSplitAtEveryOffset() {
         val body = Tlv.concat(Tlv.int16(2), Tlv.bytes(ByteArray(1200) { it.toByte() }))
         val wire = Gm.encodeJoined(7, 0x0F, 0x28, body) + Gm.encodeJoined(8, 1, 1, Tlv.encode(Tlv.STATUS, byteArrayOf(0)))

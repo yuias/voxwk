@@ -38,7 +38,7 @@ class GmStreamParser {
         while (buf.isNotEmpty()) {
             val head = buf[0].toInt() and 0xFF
             val p = partial
-            val isFirst = head == Gm.FIRST_HEAD
+            var isFirst = head == Gm.FIRST_HEAD
             if (!isFirst && (p == null || head != p.nextHead)) {
                 val next = buf.indexOfFirst { (it.toInt() and 0xFF) == Gm.FIRST_HEAD }.let { if (it < 0) buf.size else it }
                 dropPartial(out, "continuation missing")
@@ -54,6 +54,13 @@ class GmStreamParser {
             if (logical !in Gm.ENVELOPE..Gm.MAX_LOGICAL) {
                 skipOne(out, "impossible logical length")
                 continue
+            }
+            // Firmware 1.0.4.83 heads its uplink continuation frames with 0xFA, not 0x01, 0x02, ... as documented.
+            // The repeated header identifies them: a new message would carry a new event id.
+            if (isFirst && p != null && p.logical == logical && p.event == event && p.service == service &&
+                p.command == command
+            ) {
+                isFirst = false
             }
             if (!isFirst && (p!!.logical != logical || p.event != event || p.service != service || p.command != command)) {
                 dropPartial(out, "fragment identity changed")
