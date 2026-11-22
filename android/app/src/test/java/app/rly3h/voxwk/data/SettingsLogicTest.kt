@@ -4,6 +4,7 @@ import app.rly3h.voxwk.glass.GlassDisplayMode
 import app.rly3h.voxwk.lang.JaRecognizer
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
+import app.rly3h.voxwk.translate.Audience
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -147,5 +148,27 @@ class SettingsLogicTest {
   fun glassMicPickupModes() {
     assertEquals(0, GlassMic.FRONT.pickupMode)
     assertEquals(1, GlassMic.ALL_AROUND.pickupMode)
+  }
+
+  @Test
+  fun autoSpeakPartnerDefaultsToTrue() {
+    assertEquals(true, parseSettings(emptyMap()).autoSpeakPartner)
+  }
+
+  @Test
+  fun storedAutoSpeakPartnerIsKept() {
+    assertEquals(false, parseSettings(mapOf("autoSpeakPartner" to false)).autoSpeakPartner)
+  }
+
+  @Test
+  fun mistypedAutoSpeakPartnerGivesTrue() {
+    assertEquals(true, parseSettings(mapOf("autoSpeakPartner" to "no")).autoSpeakPartner)
+  }
+
+  @Test
+  fun speaksFollowsTheAudience() {
+    val s = AppSettings(autoSpeak = false, autoSpeakPartner = true)
+    assertEquals(false, s.speaks(Audience.ME))
+    assertEquals(true, s.speaks(Audience.PARTNER))
   }
 }

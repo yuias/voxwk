@@ -6,6 +6,7 @@ import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.MY_LANGUAGES
 import app.rly3h.voxwk.lang.OnlineProvider
 import app.rly3h.voxwk.lang.languageByCode
+import app.rly3h.voxwk.translate.Audience
 
 /** New Session screen mode: one-way Listen or two-way push-to-talk Conversation. */
 enum class SessionMode { LISTEN, CONVERSATION }
@@ -71,7 +72,11 @@ data class AppSettings(
   val sessionMode: SessionMode = SessionMode.LISTEN,
   val jaRecognizer: JaRecognizer = JaRecognizer.NEMOTRON,
   val mtModel: MtModel = MtModel.PLAMO3_0_8B,
+  /** Speak translations into my language (Audience.ME, what I hear). The name and stored key predate the per-direction split. */
   val autoSpeak: Boolean = true,
+  /** Speak translations into the partner's language (Audience.PARTNER, what the partner hears). */
+  val autoSpeakPartner: Boolean = true,
+  /** Applies only to what I hear; what the partner hears always plays at 1.0x. */
   val speechRate: Float = 1.0f,
   /**
    * Last-used engine toggle (mic-side switch). Offline by default; only honored
@@ -94,6 +99,8 @@ data class AppSettings(
   val glassDisplay: GlassDisplayMode = GlassDisplayMode.SOURCE_AND_TRANSLATION,
 )
 
+fun AppSettings.speaks(audience: Audience): Boolean = if (audience == Audience.ME) autoSpeak else autoSpeakPartner
+
 private val DEFAULT_PARTNER = Language.EN
 
 /** Stored preference names, shared by [parseSettings] and the repository. */
@@ -105,6 +112,7 @@ internal object SettingsKeys {
   const val JA_RECOGNIZER = "jaRecognizer"
   const val MT_MODEL = "mtModel"
   const val AUTO_SPEAK = "autoSpeak"
+  const val AUTO_SPEAK_PARTNER = "autoSpeakPartner"
   const val SPEECH_RATE = "speechRate"
   const val ONLINE_ENABLED = "onlineEnabled"
   const val ONLINE_PROVIDER = "onlineProvider"
@@ -145,6 +153,7 @@ fun parseSettings(prefs: Map<String, Any?>): AppSettings {
     jaRecognizer = prefs.enumOr(SettingsKeys.JA_RECOGNIZER, JaRecognizer.NEMOTRON),
     mtModel = prefs.enumOr(SettingsKeys.MT_MODEL, MtModel.PLAMO3_0_8B),
     autoSpeak = prefs[SettingsKeys.AUTO_SPEAK] as? Boolean ?: true,
+    autoSpeakPartner = prefs[SettingsKeys.AUTO_SPEAK_PARTNER] as? Boolean ?: true,
     speechRate = prefs[SettingsKeys.SPEECH_RATE] as? Float ?: 1.0f,
     onlineEnabled = prefs[SettingsKeys.ONLINE_ENABLED] as? Boolean ?: false,
     onlineProvider = prefs.enumOr(SettingsKeys.ONLINE_PROVIDER, OnlineProvider.OPENAI),

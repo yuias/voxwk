@@ -67,6 +67,7 @@ class SettingsRepository(context: Context) {
     prefs[stringPreferencesKey(SettingsKeys.JA_RECOGNIZER)] = s.jaRecognizer.name
     prefs[stringPreferencesKey(SettingsKeys.MT_MODEL)] = s.mtModel.name
     prefs[booleanPreferencesKey(SettingsKeys.AUTO_SPEAK)] = s.autoSpeak
+    prefs[booleanPreferencesKey(SettingsKeys.AUTO_SPEAK_PARTNER)] = s.autoSpeakPartner
     prefs[floatPreferencesKey(SettingsKeys.SPEECH_RATE)] = s.speechRate
     prefs[booleanPreferencesKey(SettingsKeys.ONLINE_ENABLED)] = s.onlineEnabled
     prefs[stringPreferencesKey(SettingsKeys.ONLINE_PROVIDER)] = s.onlineProvider.name
