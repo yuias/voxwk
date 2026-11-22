@@ -62,8 +62,9 @@ internal fun supportsCaptureRate(sampleRate: Int): Boolean {
 
 /**
  * Linear upsample of 16 kHz PCM16 (LE bytes) to 24 kHz.
- * Cold fallback used only when a device can't open a 24 kHz AudioRecord; the OS
- * resampler (native 24 kHz capture) is preferred for the 3:2 non-integer ratio.
+ * Used for Glass audio on every 24 kHz capture, and as a cold fallback when a device can't open a 24 kHz
+ * AudioRecord; for the phone microphone the OS resampler (native 24 kHz capture) is preferred for the 3:2
+ * non-integer ratio.
  */
 internal fun linearResample16to24(src: ByteArray): ByteArray {
   val inN = src.size / 2
