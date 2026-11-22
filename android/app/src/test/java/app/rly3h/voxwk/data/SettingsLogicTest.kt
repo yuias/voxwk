@@ -112,6 +112,7 @@ class SettingsLogicTest {
     assertNull(s.glassAddress)
     assertEquals(GlassMic.FRONT, s.glassMic)
     assertEquals(GlassDisplayMode.SOURCE_AND_TRANSLATION, s.glassDisplay)
+    assertEquals(true, s.glassShowMine)
   }
 
   @Test
@@ -122,12 +123,19 @@ class SettingsLogicTest {
         "glassAddress" to "00:11:22:AA:BB:CC",
         "glassMic" to "ALL_AROUND",
         "glassDisplay" to "TRANSLATION_ONLY",
+        "glassShowMine" to false,
       ),
     )
     assertEquals(true, s.glassEnabled)
     assertEquals("00:11:22:AA:BB:CC", s.glassAddress)
     assertEquals(GlassMic.ALL_AROUND, s.glassMic)
     assertEquals(GlassDisplayMode.TRANSLATION_ONLY, s.glassDisplay)
+    assertEquals(false, s.glassShowMine)
+  }
+
+  @Test
+  fun nonBooleanGlassShowMineGivesTrue() {
+    assertEquals(true, parseSettings(mapOf("glassShowMine" to "no")).glassShowMine)
   }
 
   @Test

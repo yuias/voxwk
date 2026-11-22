@@ -97,6 +97,8 @@ data class AppSettings(
   val glassAddress: String? = null, // a session uses the Glass when glassEnabled && glassAddress != null
   val glassMic: GlassMic = GlassMic.FRONT,
   val glassDisplay: GlassDisplayMode = GlassDisplayMode.SOURCE_AND_TRANSLATION,
+  /** Conversation: show my own speech (Speaker.ME turns and partials) on the Glass. False shows only the partner's. */
+  val glassShowMine: Boolean = true,
 )
 
 fun AppSettings.speaks(audience: Audience): Boolean = if (audience == Audience.ME) autoSpeak else autoSpeakPartner
@@ -128,6 +130,7 @@ internal object SettingsKeys {
   const val GLASS_ADDRESS = "glassAddress"
   const val GLASS_MIC = "glassMic"
   const val GLASS_DISPLAY = "glassDisplay"
+  const val GLASS_SHOW_MINE = "glassShowMine"
 }
 
 private inline fun <reified E : Enum<E>> Map<String, Any?>.enumOr(key: String, default: E): E =
@@ -173,5 +176,6 @@ fun parseSettings(prefs: Map<String, Any?>): AppSettings {
     glassAddress = (prefs[SettingsKeys.GLASS_ADDRESS] as? String)?.takeIf { GLASS_ADDRESS.matches(it) },
     glassMic = prefs.enumOr(SettingsKeys.GLASS_MIC, GlassMic.FRONT),
     glassDisplay = prefs.enumOr(SettingsKeys.GLASS_DISPLAY, GlassDisplayMode.SOURCE_AND_TRANSLATION),
+    glassShowMine = prefs[SettingsKeys.GLASS_SHOW_MINE] as? Boolean ?: true,
   )
 }

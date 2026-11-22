@@ -84,5 +84,6 @@ class SettingsRepository(context: Context) {
     if (s.glassAddress == null) prefs.remove(glassAddress) else prefs[glassAddress] = s.glassAddress
     prefs[stringPreferencesKey(SettingsKeys.GLASS_MIC)] = s.glassMic.name
     prefs[stringPreferencesKey(SettingsKeys.GLASS_DISPLAY)] = s.glassDisplay.name
+    prefs[booleanPreferencesKey(SettingsKeys.GLASS_SHOW_MINE)] = s.glassShowMine
   }
 }
