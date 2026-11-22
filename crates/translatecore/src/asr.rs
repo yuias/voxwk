@@ -5,6 +5,22 @@
 //! stream is created on each call. `unload` frees it when the app switches away
 //! from this engine.
 
+/// Whether an endpoint should reset the streaming recognizer.
+///
+/// With an empty transcript the endpoint is rule1 (trailing silence with no
+/// token decoded), which repeats on a ~2.8 s cycle during silence. Once speech
+/// has started but its first word is not out yet (~0.9-1.5 s after onset in
+/// English, 1.1-2.6 s in Japanese), a reset discards the speech head even
+/// though the audio fed in was intact; measured on a device, every lost turn
+/// had such an empty endpoint 0.15-2.1 s after onset. So an empty endpoint only
+/// resets after 2.0 s without a loud sample, or after 20 s without any reset so
+/// that constant noise cannot grow the stream without bound.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn should_reset(text_empty: bool, since_loud: u64, since_reset: u64, sample_rate: u32) -> bool {
+    let rate = u64::from(sample_rate);
+    !text_empty || since_loud >= 2 * rate || since_reset >= 20 * rate
+}
+
 #[cfg(target_os = "android")]
 pub fn load(model_dir: &str) -> Result<(), String> {
     imp::load(model_dir)
@@ -630,7 +646,14 @@ mod stream_imp {
         language: String,
         recognizer: *const c_void,
         stream: *const c_void,
+        /// Samples fed since the last sample louder than `LOUD_THRESHOLD`.
+        since_loud: u64,
+        /// Samples fed since the stream was last reset.
+        since_reset: u64,
     }
+
+    // 1000/32768 of full scale, on the normalized f32 samples fed to sherpa.
+    const LOUD_THRESHOLD: f32 = 1000.0 / 32768.0;
 
     unsafe impl Send for StreamEngine {}
 
@@ -717,6 +740,8 @@ mod stream_imp {
             language: language.to_owned(),
             recognizer,
             stream,
+            since_loud: 0,
+            since_reset: 0,
         };
         set_language(engine.stream, language)?;
         Ok(engine)
@@ -730,7 +755,7 @@ mod stream_imp {
         model_dir: &str,
         rules: EndpointRules,
         language: &str,
-    ) -> Result<&'a StreamEngine, String> {
+    ) -> Result<&'a mut StreamEngine, String> {
         let stale = match guard.as_ref() {
             Some(e) => e.model_dir != model_dir || e.rules != rules,
             None => true,
@@ -743,7 +768,7 @@ mod stream_imp {
                 e.language = language.to_owned();
             }
         }
-        Ok(guard.as_ref().expect("engine just loaded"))
+        Ok(guard.as_mut().expect("engine just loaded"))
     }
 
     /// Reuses the resident engine for `model_dir`, or creates one with default
@@ -752,7 +777,7 @@ mod stream_imp {
     fn ensure_any<'a>(
         guard: &'a mut Option<StreamEngine>,
         model_dir: &str,
-    ) -> Result<&'a StreamEngine, String> {
+    ) -> Result<&'a mut StreamEngine, String> {
         let rules = guard.as_ref().map_or_else(EndpointRules::default, |e| e.rules);
         let language = guard
             .as_ref()
@@ -795,6 +820,12 @@ mod stream_imp {
         let engine = ensure_any(&mut guard, model_dir)?;
         let (recognizer, stream) = (engine.recognizer, engine.stream);
 
+        engine.since_loud = match samples.iter().rposition(|s| s.abs() > LOUD_THRESHOLD) {
+            Some(i) => (samples.len() - 1 - i) as u64,
+            None => engine.since_loud + samples.len() as u64,
+        };
+        engine.since_reset += samples.len() as u64;
+
         unsafe {
             SherpaOnnxOnlineStreamAcceptWaveform(
                 stream,
@@ -816,11 +847,23 @@ mod stream_imp {
             t
         };
 
-        let is_endpoint = unsafe { SherpaOnnxOnlineStreamIsEndpoint(recognizer, stream) } != 0;
+        let mut is_endpoint = unsafe { SherpaOnnxOnlineStreamIsEndpoint(recognizer, stream) } != 0;
         if is_endpoint {
-            // Reset so the next chunk begins a fresh utterance; the text above is
-            // the finalized transcript for the segment just ended.
-            unsafe { SherpaOnnxOnlineStreamReset(recognizer, stream) };
+            if super::should_reset(
+                text.is_empty(),
+                engine.since_loud,
+                engine.since_reset,
+                sample_rate as u32,
+            ) {
+                // Reset so the next chunk begins a fresh utterance; the text above
+                // is the finalized transcript for the segment just ended.
+                unsafe { SherpaOnnxOnlineStreamReset(recognizer, stream) };
+                engine.since_reset = 0;
+            } else {
+                // Skipped reset: report no endpoint so the caller does not treat
+                // it as a turn boundary.
+                is_endpoint = false;
+            }
         }
         Ok((text, is_endpoint))
     }
@@ -829,6 +872,36 @@ mod stream_imp {
         let mut guard = engine_cell().lock().map_err(|e| e.to_string())?;
         let engine = ensure_any(&mut guard, model_dir)?;
         unsafe { SherpaOnnxOnlineStreamReset(engine.recognizer, engine.stream) };
+        engine.since_reset = 0;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_reset;
+
+    const RATE: u32 = 16000;
+
+    #[test]
+    fn non_empty_text_always_resets() {
+        assert!(should_reset(false, 0, 0, RATE));
+    }
+
+    #[test]
+    fn empty_text_near_loud_sample_keeps_stream() {
+        assert!(!should_reset(true, RATE as u64 / 5, 5 * RATE as u64, RATE));
+    }
+
+    #[test]
+    fn empty_text_after_quiet_resets() {
+        assert!(!should_reset(true, 2 * RATE as u64 - 1, RATE as u64, RATE));
+        assert!(should_reset(true, 2 * RATE as u64, RATE as u64, RATE));
+    }
+
+    #[test]
+    fn empty_text_resets_after_20s_even_with_recent_loud() {
+        assert!(!should_reset(true, 0, 20 * RATE as u64 - 1, RATE));
+        assert!(should_reset(true, 0, 20 * RATE as u64, RATE));
     }
 }
