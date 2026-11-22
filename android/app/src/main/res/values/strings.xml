@@ -185,6 +185,7 @@
     <string name="settings_glass">MemoMind Glass</string>
     <string name="settings_glass_grant">Allow Bluetooth access</string>
     <string name="settings_glass_no_devices">No paired devices</string>
+    <string name="settings_glass_other_devices">Other devices</string>
     <string name="settings_glass_enabled">Use Glass</string>
     <string name="settings_glass_mic_front">Front microphone</string>
     <string name="settings_glass_mic_all_around">All-around microphone</string>

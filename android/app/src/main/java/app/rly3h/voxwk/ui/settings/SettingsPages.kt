@@ -67,3 +67,13 @@ internal fun turnDetectionSummary(s: AppSettings): Summary {
     (s.jaRecognizer != JaRecognizer.SENSEVOICE || s.vad == VadParams())
   return Summary(if (isDefault) R.string.settings_summary_default else R.string.settings_summary_custom)
 }
+
+/**
+ * Bonded devices split into the ones shown first and the ones behind "Other devices". Only MemoMind Glass is
+ * supported, so other devices are folded away; the selected device stays in the first list whatever its name.
+ */
+internal fun splitGlassDevices(
+  devices: List<GlassDevice>,
+  selected: String?,
+): Pair<List<GlassDevice>, List<GlassDevice>> =
+  devices.partition { it.label.contains("MemoMind", ignoreCase = true) || it.address == selected }

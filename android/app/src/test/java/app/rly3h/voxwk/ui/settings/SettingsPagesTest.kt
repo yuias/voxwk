@@ -102,4 +102,13 @@ class SettingsPagesTest {
       turnDetectionSummary(AppSettings(jaRecognizer = JaRecognizer.SENSEVOICE, vad = vad)),
     )
   }
+
+  @Test
+  fun glassDevicesFoldOtherDevicesButKeepTheSelectedOne() {
+    val glass = GlassDevice("00:00:00:00:00:01", "MemoMind One")
+    val buds = GlassDevice("00:00:00:00:00:02", "WF-1000XM5")
+    val kbd = GlassDevice("00:00:00:00:00:03", "Keyboard")
+    assertEquals(listOf(glass) to listOf(buds, kbd), splitGlassDevices(listOf(glass, buds, kbd), null))
+    assertEquals(listOf(glass, kbd) to listOf(buds), splitGlassDevices(listOf(glass, buds, kbd), kbd.address))
+  }
 }
