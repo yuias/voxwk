@@ -1,5 +1,6 @@
 package app.rly3h.voxwk.audio
 
+import app.rly3h.voxwk.translate.Audience
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,5 +28,16 @@ class TtsPlaybackLogicTest {
     assertTrue(isEchoBusy(ResolvedOutput.GLASS))
     assertFalse(isEchoBusy(ResolvedOutput.EARPHONE))
     assertFalse(isEchoBusy(ResolvedOutput.NONE))
+  }
+
+  @Test
+  fun meFollowsTheSpeechRate() {
+    assertEquals(1.5f, playbackRate(Audience.ME, 1.5f))
+  }
+
+  @Test
+  fun partnerAlwaysPlaysAtNormalSpeed() {
+    assertEquals(1.0f, playbackRate(Audience.PARTNER, 1.5f))
+    assertEquals(1.0f, playbackRate(Audience.PARTNER, 0.75f))
   }
 }

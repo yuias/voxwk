@@ -28,6 +28,7 @@ import app.rly3h.voxwk.data.SessionMode
 import app.rly3h.voxwk.data.SessionStore
 import app.rly3h.voxwk.data.SettingsRepository
 import app.rly3h.voxwk.data.requiredModelIds
+import app.rly3h.voxwk.data.speaks
 import app.rly3h.voxwk.glass.GlassDisplayCallbacks
 import app.rly3h.voxwk.glass.GlassLink
 import app.rly3h.voxwk.glass.NativeTranslationDisplay
@@ -277,14 +278,14 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
       if (!conversation && router != null) {
         listenRouter = router
         if (useOnline) {
-          val pcm = PcmPlayback(router, ::autoSpeakNow)
+          val pcm = PcmPlayback(router, ::speaksNow)
           listenPcm = pcm
           audioOut = { pcm.enqueue(Audience.ME, it) }
           viewModelScope.launch { pcm.run() }
           // The Glass mic hears the Glass playback far above speech.
           sessionInput = EchoMutedInput(sessionInput) { pcm.speakerBusy }
         } else {
-          val glassTts = TtsPlayback(app, router, ::autoSpeakNow, ::speechRateNow)
+          val glassTts = TtsPlayback(app, router, ::speaksNow, ::speechRateNow)
           listenTts = glassTts
           viewModelScope.launch { glassTts.run() }
           sessionInput = EchoMutedInput(sessionInput) { glassTts.speakerBusy }
@@ -293,9 +294,9 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
       val engine: SpeechTranslator
       if (conversation) {
         engine = if (useOnline) {
-          OnlineConversationTranslator(app, apiKey!!, s, ::autoSpeakNow, s.onlineProvider, mine, s.conversationPartner, sessionInput, router!!)
+          OnlineConversationTranslator(app, apiKey!!, s, ::speaksNow, s.onlineProvider, mine, s.conversationPartner, sessionInput, router!!)
         } else {
-          OfflineConversationTranslator(app, s, ::autoSpeakNow, ::speechRateNow, sessionInput, mine, s.conversationPartner, router!!)
+          OfflineConversationTranslator(app, s, ::speaksNow, ::speechRateNow, sessionInput, mine, s.conversationPartner, router!!)
         }
         speaking = false // every session starts on the partner's side; Speaking is pressed to talk
       } else {
@@ -327,6 +328,8 @@ internal class NewSessionViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   private fun autoSpeakNow() = settings.value.autoSpeak
+
+  private fun speaksNow(audience: Audience) = settings.value.speaks(audience)
 
   private fun speechRateNow() = settings.value.speechRate
 

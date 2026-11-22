@@ -24,18 +24,22 @@ private const val UTTERANCE_MAX_TIMEOUT_MS = 60_000L
 internal fun utteranceTimeoutMs(text: String): Long =
   minOf(UTTERANCE_BASE_TIMEOUT_MS + UTTERANCE_PER_CHAR_MS * text.length, UTTERANCE_MAX_TIMEOUT_MS)
 
+/** What the partner hears always plays at normal speed; only what I hear follows the setting. */
+internal fun playbackRate(audience: Audience, meRate: Float): Float = if (audience == Audience.ME) meRate else 1.0f
+
 /**
  * Speaks offline translations one utterance at a time, routing each to its
  * audience's output first. Owns a dedicated [TextToSpeech] so the attributes set
  * here do not leak into the Listen-mode instance. [speak] never blocks; [run] is
  * the single consumer.
  *
- * @param autoSpeak read per utterance so muting mid-session takes effect immediately.
+ * @param speaks read per utterance so muting either direction mid-session takes effect immediately.
+ * @param speechRate read per utterance; it applies to [Audience.ME] only, the partner's output stays at normal speed.
  */
 internal class TtsPlayback(
   context: Context,
   private val router: AudioRouter,
-  private val autoSpeak: () -> Boolean,
+  private val speaks: (Audience) -> Boolean,
   private val speechRate: () -> Float,
 ) : EchoGate {
   private class Utterance(val audience: Audience, val text: String, val language: Language)
@@ -73,7 +77,7 @@ internal class TtsPlayback(
     val usable = withTimeoutOrNull(TTS_INIT_TIMEOUT_MS) { ready.await() } == true
     for (utterance in queue) {
       if (closed) break
-      if (!usable || !autoSpeak()) continue
+      if (!usable || !speaks(utterance.audience)) continue
       try {
         play(utterance)
       } catch (e: CancellationException) {
@@ -123,7 +127,7 @@ internal class TtsPlayback(
     val onSpeaker = isEchoBusy(output)
     if (onSpeaker) speakerBusy = true
     try {
-      tts.setSpeechRate(speechRate())
+      tts.setSpeechRate(playbackRate(utterance.audience, speechRate()))
       speakAndAwait(utterance.text)
       // Ending SCO now, before the tail, lets the Glass mic restart while the mic is still muted.
       if (output == ResolvedOutput.GLASS) router.releaseCommunicationDevice()

@@ -38,7 +38,7 @@ internal class OnlineConversationTranslator(
   private val context: Context,
   private val apiKey: String,
   private val settings: AppSettings,
-  private val autoSpeak: () -> Boolean,
+  private val speaks: (Audience) -> Boolean,
   private val provider: OnlineProvider,
   private val mine: Language,
   private val partner: Language,
@@ -55,7 +55,7 @@ internal class OnlineConversationTranslator(
 
   @Volatile private var speaking = false
 
-  private val playback = PcmPlayback(router, autoSpeak)
+  private val playback = PcmPlayback(router, speaks)
 
   private val partnerEngine = newEngine(Speaker.PARTNER)
   private val meEngine = newEngine(Speaker.ME)
@@ -126,9 +126,9 @@ internal class OnlineConversationTranslator(
     val out: (ByteArray) -> Unit = { playback.enqueue(audience, it) }
     return when (provider) {
       OnlineProvider.OPENAI ->
-        OpenAiTranslator(context, apiKey, settings, autoSpeak, target, input, source, ownCapture = false, audioOut = out)
+        OpenAiTranslator(context, apiKey, settings, { speaks(audience) }, target, input, source, ownCapture = false, audioOut = out)
       OnlineProvider.GEMINI ->
-        GeminiTranslator(context, apiKey, settings, autoSpeak, target, input, source, ownCapture = false, audioOut = out)
+        GeminiTranslator(context, apiKey, settings, { speaks(audience) }, target, input, source, ownCapture = false, audioOut = out)
     }
   }
 

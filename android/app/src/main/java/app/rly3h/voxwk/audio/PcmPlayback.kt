@@ -38,11 +38,11 @@ internal fun isDrained(playedFrames: Long, writtenFrames: Long): Boolean = playe
  * segment at a time, so each segment can be routed to its own output device.
  * One consumer ([run]) owns routing and the [AudioTrack]; [enqueue] never blocks.
  *
- * @param autoSpeak read per chunk so muting mid-session takes effect immediately.
+ * @param speaks read per chunk so muting either direction mid-session takes effect immediately.
  */
 internal class PcmPlayback(
   private val router: AudioRouter,
-  private val autoSpeak: () -> Boolean,
+  private val speaks: (Audience) -> Boolean,
 ) : EchoGate {
   private class Chunk(val at: Long, val pcm: ByteArray)
 
@@ -71,7 +71,7 @@ internal class PcmPlayback(
         if (wake.receiveCatching().isClosed) break
         continue
       }
-      if (!autoSpeak()) {
+      if (!speaks(audience)) {
         queueOf(audience).clear()
         continue
       }
@@ -109,7 +109,7 @@ internal class PcmPlayback(
       val track = buildAudioTrack()
       try {
         track.play()
-        val frames = writeSegment(track, queueOf(audience))
+        val frames = writeSegment(track, audience)
         // Wait while still playing: stop() resets playbackHeadPosition to 0 on a non-offloaded track.
         awaitDrain(track, frames)
         track.stop()
@@ -140,7 +140,8 @@ internal class PcmPlayback(
   }
 
   /** Writes queued chunks until the queue has been idle long enough; returns frames written. */
-  private suspend fun writeSegment(track: AudioTrack, queue: ConcurrentLinkedQueue<Chunk>): Long {
+  private suspend fun writeSegment(track: AudioTrack, audience: Audience): Long {
+    val queue = queueOf(audience)
     var frames = 0L
     var emptySince = -1L
     while (!closed) {
@@ -154,7 +155,7 @@ internal class PcmPlayback(
       }
       // Dropped (muted) chunks must not reset the idle timer, or muting mid-segment would keep
       // the segment, and speakerBusy, alive until the stream stops.
-      if (!autoSpeak()) continue
+      if (!speaks(audience)) continue
       emptySince = -1L
       val written = track.write(chunk.pcm, 0, chunk.pcm.size, AudioTrack.WRITE_BLOCKING)
       if (written < 0) break
