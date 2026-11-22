@@ -1,6 +1,9 @@
 package app.rly3h.voxwk.ui.settings
 
+import android.Manifest
 import android.app.Application
+import android.bluetooth.BluetoothManager
+import android.content.pm.PackageManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +15,7 @@ import app.rly3h.voxwk.R
 import app.rly3h.voxwk.RecordingService
 import app.rly3h.voxwk.data.AppSettings
 import app.rly3h.voxwk.data.EndpointParams
+import app.rly3h.voxwk.data.GlassMic
 import app.rly3h.voxwk.data.ModelDownloadWorker
 import app.rly3h.voxwk.data.ModelSpec
 import app.rly3h.voxwk.data.Models
@@ -19,6 +23,7 @@ import app.rly3h.voxwk.data.MtModel
 import app.rly3h.voxwk.data.SettingsRepository
 import app.rly3h.voxwk.data.VadParams
 import app.rly3h.voxwk.data.requiredModelIds
+import app.rly3h.voxwk.glass.GlassDisplayMode
 import app.rly3h.voxwk.lang.JaRecognizer
 import app.rly3h.voxwk.lang.Language
 import app.rly3h.voxwk.lang.OnlineProvider
@@ -89,6 +94,9 @@ data class ModelsUiState(val rows: List<ModelRowState> = emptyList()) {
   val allRequiredPresent: Boolean get() = rows.none { it.inUse && !it.present }
 }
 
+/** A bonded Bluetooth device the Glass can be picked from; [label] is the name, else the address. */
+data class GlassDevice(val address: String, val label: String)
+
 private data class DiskState(val present: Boolean, val bytes: Long)
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
@@ -151,6 +159,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
   var keyVisible by mutableStateOf(false)
     private set
   var keyTest by mutableStateOf<KeyTest?>(null)
+    private set
+
+  /** Bonded devices, empty while BLUETOOTH_CONNECT is not granted. */
+  var glassDevices by mutableStateOf<List<GlassDevice>>(emptyList())
+    private set
+  var glassPermitted by mutableStateOf(false)
     private set
 
   /** Not Compose state: read fresh on every composition. */
@@ -255,6 +269,35 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         deleting = false
       }
     }
+  }
+
+  /** Called on resume and after the permission dialog: the user can pair or grant outside the app. */
+  fun refreshGlassDevices() {
+    val app = getApplication<Application>()
+    glassPermitted = app.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    glassDevices = if (glassPermitted) {
+      app.getSystemService(BluetoothManager::class.java).adapter.bondedDevices
+        .map { GlassDevice(it.address, it.name ?: it.address) }
+        .sortedBy { it.label }
+    } else {
+      emptyList()
+    }
+  }
+
+  fun onGlassEnabledChange(value: Boolean) {
+    viewModelScope.launch { repository.update { it.copy(glassEnabled = value) } }
+  }
+
+  fun onGlassAddressChange(value: String) {
+    viewModelScope.launch { repository.update { it.copy(glassAddress = value) } }
+  }
+
+  fun onGlassMicChange(value: GlassMic) {
+    viewModelScope.launch { repository.update { it.copy(glassMic = value) } }
+  }
+
+  fun onGlassDisplayChange(value: GlassDisplayMode) {
+    viewModelScope.launch { repository.update { it.copy(glassDisplay = value) } }
   }
 
   fun onMyLanguageChange(value: Language) {

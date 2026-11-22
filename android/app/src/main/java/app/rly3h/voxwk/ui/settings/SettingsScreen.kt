@@ -59,8 +59,11 @@ fun SettingsScreen(modifier: Modifier = Modifier, vm: SettingsViewModel = viewMo
   val recording = vm.recording
   val mtInfo = vm.mtInfo
 
-  // A download can finish while another screen is showing.
-  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshModels() }
+  // A download can finish, and a device can be paired, while another screen is showing.
+  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+    vm.refreshModels()
+    vm.refreshGlassDevices()
+  }
 
   Column(
     modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -276,6 +279,10 @@ fun SettingsScreen(modifier: Modifier = Modifier, vm: SettingsViewModel = viewMo
       OnlineBounds.idleGapMs,
       { res.getString(R.string.settings_unit_ms, it.toInt()) },
     ) { vm.onIdleGapChange(it.toInt()) }
+
+    HorizontalDivider()
+
+    GlassSection()
 
     HorizontalDivider()
 
