@@ -22,8 +22,9 @@ class TtsPlaybackLogicTest {
   }
 
   @Test
-  fun onlyTheSpeakerIsBusy() {
+  fun onlySpeakerAndGlassAreBusy() {
     assertTrue(isEchoBusy(ResolvedOutput.SPEAKER))
+    assertTrue(isEchoBusy(ResolvedOutput.GLASS))
     assertFalse(isEchoBusy(ResolvedOutput.EARPHONE))
     assertFalse(isEchoBusy(ResolvedOutput.NONE))
   }

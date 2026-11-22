@@ -21,10 +21,12 @@ internal class ConversationInputGate {
 
   /**
    * Speaking ON means the user talks (ME); otherwise the mic is treated as the
-   * partner. Both directions are muted while the speaker is busy: the translation
-   * of my own speech plays there, and with Speaking still latched the mic hears it
-   * as a new ME turn. The platform AEC cannot be relied on (on a OnePlus CPH2655 it
-   * had no echo reference), so the price is that nobody can talk over the speaker.
+   * partner. Both directions are muted while the speaker or the Glass is busy: the
+   * translation plays there, and the mic hears it (on the speaker, with Speaking still
+   * latched, as a new ME turn; on the Glass, about 30 dB above speech in the Glass mic
+   * stream). The platform AEC cannot be relied on (on a OnePlus CPH2655 it had no echo
+   * reference), so the price is that nobody can talk over that playback. Earphone playback
+   * is not audible to the mic and never mutes.
    */
   fun decide(speaking: Boolean, speakerBusy: Boolean): InputDecision {
     val active = if (speaking) Speaker.ME else Speaker.PARTNER

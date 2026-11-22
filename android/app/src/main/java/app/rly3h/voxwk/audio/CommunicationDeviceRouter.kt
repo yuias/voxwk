@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal class CommunicationDeviceRouter(
   context: Context,
+  private val glassAddress: String? = null,
   private val onEnded: (AudioRouter) -> Unit = {},
 ) : AudioRouter {
   private val audioManager = context.getSystemService(AudioManager::class.java)
@@ -32,20 +33,20 @@ internal class CommunicationDeviceRouter(
   override fun begin(): EngineStatus? = synchronized(routeLock) {
     if (ended.get()) return null
     audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-    if (findEarphone() != null) null else EngineStatus.NoEarphones
+    if (findMeDevice() != null) null else EngineStatus.NoEarphones
   }
 
   override fun routeTo(audience: Audience): ResolvedOutput = synchronized(routeLock) {
     if (ended.get()) return ResolvedOutput.SPEAKER
-    val earphone = if (audience == Audience.ME) findEarphone() else null
-    // ME is private: without earphones nothing plays rather than falling back to the speaker.
-    if (audience == Audience.ME && earphone == null) return ResolvedOutput.NONE
+    val me = if (audience == Audience.ME) findMeDevice() else null
+    // ME is private: without earphones or Glass nothing plays rather than falling back to the speaker.
+    if (audience == Audience.ME && me == null) return ResolvedOutput.NONE
     // An explicit device is always set. Clearing and trusting the default could land on the
     // earpiece when no earphones are present, and the echo gate would not know where it played.
-    val target = earphone ?: findBuiltinSpeaker()
+    val target = me?.first ?: findBuiltinSpeaker()
     val applied = target != null && switchTo(target)
     // A failed switch leaves the output unknown, so report SPEAKER: the echo gate errs on muting.
-    if (applied && earphone != null) ResolvedOutput.EARPHONE else ResolvedOutput.SPEAKER
+    if (applied && me != null) me.second else ResolvedOutput.SPEAKER
   }
 
   override fun builtinMic(): AudioDeviceInfo? =
@@ -72,10 +73,10 @@ internal class CommunicationDeviceRouter(
     return true
   }
 
-  private fun findEarphone(): AudioDeviceInfo? {
+  private fun findMeDevice(): Pair<AudioDeviceInfo, ResolvedOutput>? {
     val devices = audioManager.availableCommunicationDevices
-    val type = pickEarphoneType(devices.map { it.type }) ?: return null
-    return devices.firstOrNull { it.type == type }
+    val picked = pickMeDevice(devices.map { it.type to it.address }, glassAddress) ?: return null
+    return devices[picked.index] to picked.output
   }
 
   private fun findBuiltinSpeaker(): AudioDeviceInfo? =
