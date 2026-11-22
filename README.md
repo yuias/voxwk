@@ -1,10 +1,11 @@
 # voxwk
 
 An Android app that translates speech on the device. Its main use is for Japanese speakers abroad: speech in other
-languages is translated into Japanese offline and spoken aloud. Showing translations on MemoMind Glass is planned.
+languages is translated into Japanese offline and spoken aloud. MemoMind Glass can serve as the microphone, and as the display and speaker for translations.
 
-Status: the phone app is buildable and complete for phone-only use. MemoMind Glass is not part of the app yet;
-`poc/glass-spp/` is a buildable hardware test.
+Status: the phone app is buildable and complete. MemoMind Glass is part of the app; it was tested with one phone and
+one Glass, and the limits are listed under [Known limits](#known-limits). `poc/glass-spp/` is a buildable hardware
+test.
 
 ## Features
 
@@ -16,6 +17,8 @@ Status: the phone app is buildable and complete for phone-only use. MemoMind Gla
   - **Listen**: hears the other person (a chosen language, or Auto) and translates into your language. Translations are
     spoken only when earphones or another private output are connected.
   - **Conversation**: two-way, with a **Speaking** button that tells the app who is talking.
+- MemoMind Glass: its microphone as the input, translations on its display and speaker, and screenshots of its
+  display.
 - Translation with PLaMo 3 Translate (0.8B by default, 2B optional) through llama.cpp.
 - Session history is saved on the device.
 
@@ -62,10 +65,12 @@ adb install -r android/app/build/outputs/apk/debug/voxwk.debug.apk
 
 ```sh
 cargo test --workspace
-android/gradlew -p android :app:testDebugUnitTest
+android/gradlew -p android :app:testDebugUnitTest :glass-gm:test
 ```
 
 The unit tests run on the host. Behavior that needs a phone, Bluetooth or Glass is not covered by them.
+`:glass-gm:test` includes a cross-check of the Glass codec against the MemoMind reference; it is skipped when the SDK is
+not cloned (see [MemoMind Glass SDK](#memomind-glass-sdk)).
 
 ### Release build and signing
 
@@ -113,7 +118,7 @@ deletes its downloaded models and saved sessions.
 Listen is one way: speech in the partner language (or Auto) is translated into your language. Speech that is already in
 your language is skipped. Translations are spoken only when a private output (wired or Bluetooth earphones, a USB
 headset, a hearing aid) is connected; otherwise they are shown as text. The speaker icon next to the microphone mutes
-spoken output.
+spoken output. With the Glass, see [MemoMind Glass](#memomind-glass).
 
 ### Conversation
 
@@ -123,8 +128,12 @@ spoken output.
    While it is on, your speech is translated into the partner's language.
 3. The translation of the partner's speech plays on your earphones. The translation of your speech plays on the phone's
    speaker. Without earphones the partner's speech is shown as text only.
+4. The two speaker icons beside the microphone switch spoken output on and off per direction: the left one for the
+   translation spoken to your partner, the right one for the translation you hear. Each carries a language badge. The
+   same two switches are in **Settings > Playback**.
 
-Output switching between earphones and speaker has not been verified on a device. Some phones may clip the start of an
+Switching per utterance between the built-in speaker and the Glass was tested on one phone (offline). Switching between
+the speaker and wired, USB or Bluetooth earphones was not tested on a device. Some phones may clip the start of an
 utterance after a switch, or route Bluetooth differently than expected.
 
 ### Online mode
@@ -135,7 +144,71 @@ utterance after a switch, or route Bluetooth differently than expected.
 
 - Audio is sent to the chosen provider and billed to your key. The key is stored encrypted on the device.
 - Online Conversation connects two sessions at once, one per direction, so the cost can double.
-- **Pause to split a turn** in Settings sets how long a pause closes a turn online.
+- **Pause to split a turn** in **Settings > Turn detection** sets how long a pause closes a turn online.
+
+### MemoMind Glass
+
+The Glass can be the microphone of a session and show its translations. It is optional; without it the app works as
+described above.
+
+**Setup**
+
+1. Pair the Glass in Android's Bluetooth settings.
+2. In **Settings > MemoMind Glass**, allow Bluetooth access, pick the Glass under Device and turn on **Use Glass**.
+3. The official MemoMind app cannot use the Glass at the same time as voxwk. Force-stop it before a session. If it has
+   notification access, Android restarts it within about a second and it takes the Glass again, so turn its
+   notification access off first.
+4. voxwk holds the Glass only while a session runs, and connects it when you tap the microphone. If the connection
+   fails, the session does not start; tap the microphone again to retry.
+
+**Listen**
+
+- The Glass microphone is the input, and translations appear on the Glass display.
+- With **Speak translations for me** on, the translation is also spoken on the Glass speaker, as Bluetooth call audio.
+- The microphone is muted while the Glass plays, and the call audio is released after each utterance so that the
+  microphone comes back.
+
+**Conversation**
+
+- The Glass microphone serves both directions, and **Speaking** still decides who talks.
+- The partner's translation goes to the Glass, and the translation of your speech to the phone's speaker.
+- With **Show what I say in Conversation** off (**Settings > MemoMind Glass**, under Display), the Glass shows only the
+  partner's direction. Your speech and its translation appear only on the phone. The setting applies from the next
+  session.
+
+**Display**
+
+- **Source and translation**, or **Translation only**. Translation only still shows the source while someone is
+  speaking; the final line is the translation only.
+- The Glass display is closed after 15 seconds without updates so that the Glass can dim. The next translation opens it
+  again.
+
+**Microphone**
+
+- **Front microphone** or **All-around microphone**. Only the front microphone was tested.
+
+**Screenshots**
+
+- During a Glass session a screenshot button appears at the top right of the session screen. It saves what the Glass
+  shows as a PNG in `Pictures/voxwk`.
+
+**Speech per direction**
+
+- **Settings > Playback** has **Speak translations for me** and **Speak translations for my partner**. In Conversation
+  the session screen has one toggle per direction as well.
+- The speech rate applies only to what you hear. What your partner hears always plays at normal speed.
+
+#### Known limits
+
+- The Glass cannot be used together with the official MemoMind app (see Setup).
+- Speech during Glass playback is not translated: the microphone is muted, and the call-audio stream of the Glass does
+  not carry usable speech.
+- The start of an utterance is occasionally lost on the Glass microphone: 1 of 21 turns in one test run.
+- Online speech always plays at normal speed, and the speech rate setting does not apply to it. Online mode with the
+  Glass was not tested on a device.
+- Turning the Glass off during a session ends the session. This was not tested on a device.
+- The All-around microphone was not tested.
+- If a second Bluetooth headset is connected for calls during a Glass session, voxwk treats it as the Glass.
 
 ### Which sessions run offline
 
@@ -188,7 +261,7 @@ product documentation. The app shows that notice in Settings.
 
 | Path | Contents |
 | --- | --- |
-| `android/` | Android app (Kotlin, Jetpack Compose, Gradle) |
+| `android/` | Android app (Kotlin, Jetpack Compose, Gradle) and `glass-gm`, the MemoMind Glass codec shared with the PoC |
 | `crates/` | Rust workspace members: the on-device speech and translation core |
 | `docs/` | Architecture document: [docs/architecture.md](docs/architecture.md) |
 | `tools/` | Binding generation script and the desktop translation evaluation tool |
@@ -200,7 +273,8 @@ The Rust workspace is defined at the repository root, so `cargo test --workspace
 ## MemoMind Glass SDK
 
 Glass support uses the public MemoMind Bluetooth protocol documents. The SDK is distributed under its own licence and is
-not part of this repository. Clone it locally before working on Glass code:
+not part of this repository. Building and using the app does not need it. The clone is needed only for the codec
+cross-check test in `android/glass-gm`:
 
 ```sh
 git clone https://github.com/memomind-open/plugin-open-platform.git third_party/plugin-open-platform
