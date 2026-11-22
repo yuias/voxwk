@@ -1,6 +1,7 @@
 # voxwk: architecture
 
-This describes the phone app as implemented. Build and signing steps are in [README.md](../README.md).
+This describes the app as implemented: the phone app and its MemoMind Glass support. Build and signing steps, and the
+user-facing description of the Glass, are in [README.md](../README.md).
 
 ---
 
@@ -8,7 +9,9 @@ This describes the phone app as implemented. Build and signing steps are in [REA
 
 voxwk translates speech between Japanese and eight other languages. By default all inference runs on the device. The
 inference core is the Rust crate `translatecore`, called from the Jetpack Compose UI through UniFFI and JNA. Online
-translation is optional: it hands a whole turn to a cloud speech-to-speech model.
+translation is optional: it hands a whole turn to a cloud speech-to-speech model. The MemoMind Glass is an optional
+second device: its microphone can be the input, and its display and speaker show and speak the translations
+(section 7).
 
 ```
 Kotlin / Compose (android/app)   UI, capture, OS TTS, playback routing, model downloads, settings
@@ -20,8 +23,9 @@ Rust core (crates/translatecore)  VAD and ASR orchestration, translation through
 Native libs (jniLibs)             sherpa-onnx + onnxruntime, libtranslatecore.so (llama.cpp linked statically)
 ```
 
-Audio I/O (`AudioRecord`, `TextToSpeech`, `AudioTrack`) stays on the Kotlin side. The Rust side only converts and runs
-inference, which keeps it testable on the host.
+Audio I/O (`AudioRecord`, `TextToSpeech`, `AudioTrack`, the Glass Bluetooth links) stays on the Kotlin side. The Rust
+side only converts and runs inference, which keeps it testable on the host. The one exception to "inference" is
+`opus.rs`, which decodes the Glass microphone's Opus packets to PCM.
 
 ### Repository layout
 
@@ -29,12 +33,13 @@ inference, which keeps it testable on the host.
 | --- | --- |
 | `Cargo.toml`, `Cargo.lock` | Rust workspace (one member, `crates/translatecore`) |
 | `.cargo/config.toml` | Sets `CMAKE_GENERATOR=Ninja` for the llama.cpp build |
-| `crates/translatecore/` | The Rust core: `lib.rs` (exported API), `mt.rs`, `asr.rs`, `vad.rs` |
+| `crates/translatecore/` | The Rust core: `lib.rs` (exported API), `mt.rs`, `asr.rs`, `vad.rs`, `opus.rs` (Glass Opus decoder) |
 | `android/` | Gradle root project; `app/` is the app |
+| `android/glass-gm/` | The MemoMind GM codec (frames, sessions, recording stream parser, screenshot decoding), pure JVM; shared with the PoC |
 | `android/app/src/main/java/uniffi/translatecore/translatecore.kt` | Generated UniFFI bindings, committed |
 | `tools/gen-bindings.sh` | Regenerates the bindings from the host build of the core |
 | `tools/mt-eval/` | Desktop scoring of the translation models; not part of the app |
-| `poc/` | Throwaway hardware experiments; not part of the app build |
+| `poc/` | Throwaway hardware experiments; not part of the app build (the Glass PoC builds `android/glass-gm/` too) |
 
 The app code is under `android/app/src/main/java/app/rly3h/voxwk/`:
 
@@ -43,7 +48,8 @@ The app code is under `android/app/src/main/java/app/rly3h/voxwk/`:
 | `lang/` | `Language`, the pair rules and the recognizer choice (section 4) |
 | `data/` | Settings (DataStore), the key store, the session store, the model catalogue and downloads |
 | `translate/` | The engines and the callback seam between an engine and the screen (section 2) |
-| `audio/` | `AudioInput`, output routing, TTS and PCM playback (section 6) |
+| `audio/` | `AudioInput` and its phone and Glass implementations, output routing, TTS and PCM playback (sections 2 and 6) |
+| `glass/` | The Glass link, the HUD display, the display callbacks decorator and screenshots (section 7) |
 | `ui/` | Session, history and settings screens, each with a ViewModel |
 | `theme/` | The DayNight theme |
 
@@ -57,13 +63,24 @@ The app code is under `android/app/src/main/java/app/rly3h/voxwk/`:
   implement `ConversationTranslator.setSpeaking`.
 - `TranslatorCallbacks`: `onTurnStart`, `onTurnUpdate`, `onTurnComplete`, `onPartial`, `onStatus`, `onSpeak`,
   `onPersist` and `onFinished`. Each maps onto one piece of screen state, so an engine never touches Compose.
+  `onPartial(text, speaker)` is an overload for Conversation: the offline engine tags a partial with the direction of
+  the chunk it was decoded from. The default drops the tag, so only a callback that needs it (the Glass display)
+  overrides it. The tag cannot come from the Speaking state at display time, because the offline loops decode queued
+  chunks later, and a partial of my last words can arrive after Speaking was released.
+- `GlassDisplayCallbacks` (section 7) is a decorator over a `TranslatorCallbacks`: it delegates every call and mirrors
+  the turns to the Glass display, so the engines do not know about the Glass.
 - `EngineStatus` is typed, not text: `Listening`, `Connecting`, `NoEarphones`, `NoTtsVoice(language)`,
   `Failed(stage, detail)` and `Directional(speaker, inner)`. The screen turns it into a string resource. A native
   error message (`detail`) is shown verbatim inside a resource template.
 - `LiveTurn` carries the transcript, `src` (null means Auto in Listen), `tgt`, the raw ASR tag, the translation, the
   speaker (Conversation only) and the start time.
-- Engines take an `AppSettings` snapshot at session start. Mute and speech rate act mid-session, so engines read them
-  through `autoSpeak` and `speechRate` lambdas backed by the live settings flow.
+- Engines take an `AppSettings` snapshot at session start. The speak switches and the speech rate act mid-session, so
+  engines read them from the live settings flow through lambdas. Playbacks that serve both audiences (`TtsPlayback`,
+  `PcmPlayback` and the two Conversation engines) take `speaks(audience)`, backed by `AppSettings.speaks`: `autoSpeak`
+  is "speak what I hear" (`Audience.ME`) and `autoSpeakPartner` is "speak what my partner hears". Paths that serve only
+  me (Listen's media TTS and the online Listen audio sink) take a plain `autoSpeak` lambda. The speech rate applies to
+  `Audience.ME` only: `playbackRate(audience, rate)` is the rate for me and always 1.0 for the partner, set explicitly
+  on every utterance because the `TextToSpeech` instance keeps its last rate. Online speech is never rate-adjusted.
 
 `ui/session/NewSessionViewModel.kt` owns a running session. The engine runs on `viewModelScope`, so opening the drawer,
 rotating or visiting Settings does not stop it. `RecordingService` is a foreground service of type `microphone` that
@@ -92,8 +109,30 @@ mono chunks until `running` turns false.
 | Offline | 16 kHz | 100 ms | `VOICE_RECOGNITION` in Listen, `VOICE_COMMUNICATION` in Conversation |
 | Online | 24 kHz (OpenAI), 16 kHz (Gemini) | 40 ms | `VOICE_COMMUNICATION` (hardware echo cancellation) |
 
-`PhoneAudioInput` is the only input today. A device that cannot open a 24 kHz `AudioRecord` captures 16 kHz and
-upsamples it linearly. Each saved session records its input kind (`PHONE` or `GLASSES`); only `PHONE` is produced.
+`PhoneAudioInput` captures from the phone. A device that cannot open a 24 kHz `AudioRecord` captures 16 kHz and
+upsamples it linearly. Each saved session records its input kind (`PHONE` or `GLASSES`).
+
+`GlassAudioInput` takes the microphone of the Glass instead. It is constructed with the session's `GlassLink`, the
+Opus decoder and the pickup mode; `purpose` and the preferred device of the format are ignored.
+
+- It starts a recording on the Glass: `01/2F` sets noise reduction 0 and the pickup mode, the recording is negotiated in
+  compact form and started. The Glass sends Opus packets of 20 ms; each is decoded to 640 bytes of 16 kHz PCM, regrouped
+  into the chunk size of the format (`PcmRechunker`) and upsampled when the format is 24 kHz.
+- Streams: `0x92` is this client's recording. `0x93` replaces it while Bluetooth call audio (SCO) is up, but speech in it
+  is not usable. It is accepted because inside a voxwk recording it only appears while SCO is up, which is also while
+  the Glass plays and the input is muted, so gating it separately would change nothing. `0x90` and `0x91` are the Glass's own
+  recordings and arrive unsolicited, and `0x94` was not observed; all three are dropped.
+- **Restart after a stall.** When SCO ends the Glass stops recording and does not resume by itself. If no accepted
+  packet arrives for 300 ms (`restartAfterMs`; packets normally arrive every 20 ms) the input negotiates and starts the
+  recording again. Watching the stream instead of taking a signal from the router also covers SCO ending for other
+  reasons, such as a phone call.
+- **Pickup mode.** `GlassMic.FRONT` is mode 0 and `ALL_AROUND` is mode 1 (the documented 3-microphone mode). Only mode 0
+  was tested.
+- A closed link while running throws an `IOException`, which ends the session.
+
+`EchoMutedInput` wraps any input and delivers silence while a `busy` function is true. Listen with a Glass uses it so the
+Glass microphone does not hear the Glass playing. It sends zeros instead of dropping chunks, so the recognizer's time
+axis stays continuous, as in Conversation.
 
 ---
 
@@ -119,6 +158,13 @@ including Auto, uses Nemotron.
   stream is reset, because on a device `"auto"` decoded Japanese as Chinese. Turns end on sherpa's endpoint rules
   (`EndpointParams`: rule1 2.4 s, rule2 1.2 s, rule3 20 s by default), where rule2 (silence after speech) is the main
   end-of-turn setting.
+- **Empty endpoints.** An endpoint with an empty transcript is rule1 (trailing silence with no token decoded) and repeats
+  about every 2.8 s in silence. Resetting the stream there discarded the head of speech whose first word was not decoded
+  yet: on a device, every lost turn head had such an empty endpoint 0.15 to 2.1 s after onset. `should_reset` therefore
+  resets on a non-empty endpoint, or on an empty one only after 2 s without a loud sample, or 20 s without any reset (so
+  constant noise cannot grow the stream without bound). A skipped reset reports `is_endpoint = false`, so the caller
+  does not end a turn. In a device run with the Glass microphone, 20 of 21 turn heads were kept (12 of 21 before); the remaining loss is
+  not explained.
 - **SenseVoice (`asr`) with Silero VAD (`vad`)** is more accurate for Japanese. The VAD cuts a segment per utterance
   and SenseVoice transcribes it and returns a language tag. `VadParams` defaults: threshold 0.5, `minSilenceMs` 500,
   `minSpeechMs` 250, `maxSpeechMs` 15000.
@@ -308,16 +354,18 @@ start so that pressing Speaking does not wait for a handshake; billing can there
 ## 6. Audio output policy
 
 Where a translation is heard depends on the mode. `audio/AudioRouter.kt` holds the pure rules and the router
-interface; `ResolvedOutput` is `EARPHONE`, `SPEAKER` or `NONE`.
+interface; `ResolvedOutput` is `EARPHONE`, `SPEAKER`, `GLASS` or `NONE`.
 
 | Mode | Speaks to |
 | --- | --- |
 | Listen, offline or online | A private output only; otherwise nothing (text only). The phone speaker is never used. |
 | Conversation, partner's speech (heard by me) | Earphones; otherwise nothing, and a notice is shown |
 | Conversation, my speech (heard by the partner) | The phone's built-in speaker |
+| Glass session, Listen, or Conversation partner's speech (heard by me) | The Glass speaker (`GLASS`), over Bluetooth call audio |
 
-- **Listen** keeps the audio mode at `MODE_NORMAL`. `listenHasPrivateOutput` checks the media output devices for a
-  wired headset or headphones, a USB headset, A2DP, a BLE headset or a hearing aid. Offline Listen checks it when it
+- **Listen** keeps the audio mode at `MODE_NORMAL`, except in a Glass session (section 7), where it has a router like
+  Conversation. Otherwise `listenHasPrivateOutput` checks the media output devices for
+  a wired headset or headphones, a USB headset, A2DP, a BLE headset or a hearing aid. Offline Listen checks it when it
   speaks; online Listen decides once per turn when its first audio chunk arrives, so earphones plugged in mid-turn do
   not make a turn start playing halfway. Devices are queried each time, so plugging in or out takes effect on the next
   utterance.
@@ -326,8 +374,8 @@ interface; `ResolvedOutput` is `EARPHONE`, `SPEAKER` or `NONE`.
   the order wired headset, wired headphones, USB headset, BLE headset, Bluetooth SCO, hearing aid, and returns `NONE`
   when there is none, and the caller skips playback. For `PARTNER` it selects the built-in speaker. An explicit device
   is always set, and after a switch the router waits 200 ms (`ROUTE_SETTLE_MS`) because the start of the next
-  utterance can otherwise play on the old device. A2DP-only devices do not count as earphones here. `begin()` reports
-  `EngineStatus.NoEarphones` at session start when none is connected.
+  utterance can otherwise play on the old device. A2DP-only devices do not count as earphones here. In a Glass session ME's output is the Glass
+  (section 7). `begin()` reports `EngineStatus.NoEarphones` at session start when none is connected.
 - **Playback attributes.** Conversation `AudioTrack` and TTS use `USAGE_VOICE_COMMUNICATION`, because normal media
   attributes do not follow the communication device. The screen sets `volumeControlStream` to the voice-call stream
   while a Conversation records.
@@ -343,8 +391,10 @@ interface; `ResolvedOutput` is `EARPHONE`, `SPEAKER` or `NONE`.
 
 If the microphone picks up translated audio from the speaker and feeds it into the other direction, translations
 trigger more translations. `TtsPlayback` and `PcmPlayback` expose `EchoGate.speakerBusy`: true only while audio plays
-on the speaker, plus 300 ms (`ECHO_TAIL_MS`) for reverberation. A failed route switch counts as speaker playback,
-which errs on the side of muting. `NONE` and `EARPHONE` are never busy.
+on the speaker or the Glass, plus a tail: 300 ms (`ECHO_TAIL_MS`) for reverberation on the speaker, and 800 ms
+(`GLASS_ECHO_TAIL_MS`) after Glass playback (section 7). A failed route switch counts as speaker playback, which errs
+on the side of muting. `NONE` and `EARPHONE` are never busy: earphone audio does not reach the microphone, but the Glass
+microphone hears the Glass speaker about 30 dB above speech.
 
 The capture thread asks `ConversationInputGate.decide(speaking, speakerBusy)` for every chunk. Both directions are
 muted while the speaker is busy: the translation of my own speech plays on the speaker, and with Speaking still on the
@@ -357,20 +407,153 @@ provider stays continuous.
 Stopping a Conversation discards queued and playing translated audio at once. The translated text was saved when it was
 shown, so it is kept. Stopping a Listen session does not cut off the utterance the offline TTS is speaking.
 
-### Not verified on a device
+### Verified and not verified on a device
 
-Routing has been checked by building and by unit tests of the pure rules, not on a phone. These are assumptions:
+Routing was checked by building, by unit tests of the pure rules, and on one phone with one Glass. The statements below
+are for that phone only.
 
-- During `MODE_IN_COMMUNICATION`, `setCommunicationDevice` can switch between wired, USB or Bluetooth earphones and the
-  built-in speaker per utterance, and 200 ms is enough settle time.
-- Bluetooth earphones are reachable as SCO or LE Audio communication devices, and capture stays on the built-in
-  microphone.
-- `TextToSpeech.setAudioAttributes` makes TTS follow the selected device too.
-- After a session ends, other apps' playback is unaffected.
+Verified:
+
+- In `MODE_IN_COMMUNICATION`, `setCommunicationDevice` switches per utterance between the built-in speaker (the
+  partner's audience) and the Glass over SCO (my audience), offline.
+- `TextToSpeech.setAudioAttributes` makes TTS follow the selected device.
+- SCO ends within 0.16 s of `clearCommunicationDevice()` (11 of 11 Glass playbacks).
+
+Not verified:
+
+- Online playback (`PcmPlayback`) on either device.
+- Wired, USB and Bluetooth earphone routing, and whether 200 ms of settle time is enough for them.
+- Capture staying on the built-in microphone with Bluetooth earphones.
+- Other apps' playback after a session ends.
 
 ---
 
-## 7. Models
+## 7. MemoMind Glass
+
+The Glass is a pair of glasses with a microphone, a display and a speaker. voxwk talks to it over Bluetooth using the
+MemoMind protocols (GM frames on RFCOMM). The codec is the pure-JVM module `android/glass-gm/`, which the app and the
+Glass PoC both build. The app side is in `glass/` and `audio/`. A session uses the Glass when Settings has "Use Glass" on
+and a device address.
+
+### Link
+
+`GlassLink` opens two secure RFCOMM sockets at session start and closes them when the session ends: the command channel
+(UUID `00007033-...`) and the recording channel (`00002024-...`). Both connect in about 250 ms in total. There is no
+insecure attempt and no `1101` fallback: both connect secure, and the Glass's service record does not list `1101`.
+
+- **One link per session.** The official MemoMind app and voxwk cannot use the Glass at the same time: while the official
+  app holds it, opening the command channel fails. voxwk therefore holds the Glass only while a session runs, which costs
+  the connect time at each start.
+- **Notification access.** The official app has a notification listener, and while it has notification access Android
+  restarts it within about a second of a force-stop, after which it takes the Glass again. Turning its notification
+  access off is the expected remedy. That a force-stop then keeps it stopped was not measured. The in-app message does not
+  mention this.
+- **Connect failure.** A failed connect looks the same whether the official app holds the Glass or the Glass is off or
+  out of range, so there is one message ("Can't connect to the Glass. Force-stop the MemoMind app, or turn Glass off in
+  Settings."). A missing Bluetooth permission has its own message. The session does not start; there is no automatic retry
+  and no fallback to the phone microphone.
+- **Frames.** The uplink's continuation frames are headed `0xFA`, not `0x01` as documented. The codec in `glass-gm`
+  accepts them, and its tests cover the case.
+- **Teardown** (link, display, decoder) runs on the application scope on `Dispatchers.IO`, because clearing the
+  ViewModel cancels its own scope.
+
+The microphone input over this link is `GlassAudioInput` (section 2).
+
+### Display
+
+`GlassDisplayCallbacks` mirrors the turns of any engine to a `GlassDisplay`, and `NativeTranslationDisplay` renders them
+in the Glass's own translation UI (service `03`).
+
+| Frame | Sent when |
+| --- | --- |
+| `03/01` | the session begins (title), and again before the first update after an idle close |
+| `03/03` | a provisional update: the partial transcript, a turn start, or a translation filling in |
+| `03/04` | a turn's final translation |
+| `03/02` | the session ends, or the display has been idle for 15 s |
+
+- Text is raw UTF-8 (`ASCII_ONLY` is false); Japanese rendered correctly on the Glass. A provisional with an empty
+  translation shows a recording indicator and keeps the previous final line.
+- **Coalescing.** Provisional updates less than 250 ms apart are merged (the latest wins, sent on the next call after the
+  interval); a final is always sent at once. No rate-limit reply and no flicker were seen at 250 ms.
+- **Display mode.** "Translation only" empties the source of the final only. The provisionals still carry the source, so
+  the partial transcript shows while someone speaks.
+- **`showMine`.** With "Show what I say in Conversation" off, the turns and partials of `Speaker.ME` are delegated to the
+  screen but not shown on the Glass: they are not stored, so their updates and final show nothing, and they do not count
+  toward the coalescing interval. The HUD keeps the partner's last line while I speak. The partner's partial is told
+  apart from mine by `onPartial(text, speaker)` (section 2). Empty partials, which clear the line, are untagged and
+  ignored by the Glass display. The setting is read at session start.
+- **Writer.** Every frame is posted with `GmSession.post` from one single-thread executor, in call order, without waiting
+  for a reply, because the callbacks arrive on engine threads (the offline engine calls back on Main) and a blocking
+  request could stall them. After `close()` the display drops calls. A write error (the link dropped) is caught on that
+  thread; the input ends the session.
+- **Idle close.** On the tested firmware the Glass never dims its display while the translation UI is open, even in
+  silence, and dims soon after `03/02`. The display therefore posts `03/02` after 15 s without a shown update and `03/01`
+  before the next one. The check runs on the writer's executor, with an update counter so that a check firing as an
+  update arrives sees it is stale. Measured: the display dims about 15 s plus the Glass's own timeout after the last
+  update, the link stays up, and the next translation opens the UI again. After the idle close, raising the head shows
+  the Glass home screen with "App disconnected", because the official app is not connected; this is expected.
+
+### Speaker and Bluetooth call audio
+
+The Glass speaker is reached with Bluetooth call audio (SCO), through the Conversation router
+(`MODE_IN_COMMUNICATION` plus `setCommunicationDevice(TYPE_BLUETOOTH_SCO)`).
+
+- **Which device is the Glass.** The SCO communication device of the Glass reports a hidden address, so it cannot be
+  matched to the paired address. In a Glass session any SCO device is the Glass (`pickMeDevice` returns `GLASS`); the
+  configured address is only the flag that this is a Glass session. The cost is that a second Bluetooth headset with
+  SCO connected during a Glass session counts as the Glass.
+- **The microphone during SCO.** While SCO is up the Glass records on `0x93` instead of `0x92`, within about 0.5 s, and
+  speech in `0x93` is not usable. Glass playback also arrives in `0x93` about 30 dB above speech. So the input is muted
+  while the Glass plays (`isEchoBusy(GLASS)` is true; this is the exception to "earphone playback never mutes").
+- **SCO released after each utterance.** After each utterance on `GLASS`, `TtsPlayback` and `PcmPlayback` call
+  `releaseCommunicationDevice()` (`clearCommunicationDevice()`, with the mode left at `MODE_IN_COMMUNICATION`), and the
+  next utterance selects the Glass again. Without this the OS keeps SCO up for 6.0 s after each
+  `USAGE_VOICE_COMMUNICATION` playback, which left the Glass on the unusable `0x93` for that long. When SCO ends the Glass
+  stops recording, and `GlassAudioInput` restarts it after the 300 ms stall (section 2). The whole SCO-off and restart
+  window measured about 0.65 s, with one in 11 taking 1.24 s. The echo hold after Glass playback is
+  `GLASS_ECHO_TAIL_MS` (800 ms), so the mute covers the period in which the Glass delivers no microphone audio. On the device no echo turns
+  followed Glass playback in Listen or Conversation.
+- **Listen** has no router on the phone. In a Glass session the ViewModel creates one before the recording service
+  starts (so the service's generation check covers it), calls `begin()`, and puts a `TtsPlayback` (offline) or a
+  `PcmPlayback` (online, through the engines' `audioOut`) on it. The input is wrapped in `EchoMutedInput`. When the
+  session finishes the playback is closed and `router.end()` is called.
+- **Conversation** needs nothing more: the Glass microphone serves both directions, the translation for me goes to the
+  Glass, and the translation for my partner goes to the phone speaker. `ConversationInputGate` already mutes both
+  directions while `speakerBusy`.
+
+### Screenshots
+
+The session screen shows a screenshot button while a Glass session runs. It reads the Glass's framebuffer over the command
+channel (service `01`).
+
+- **Wire.** `01/65` requests a capture, the Glass uploads `01/66` chunks (index `0xFFFE` start with JSON metadata,
+  `0..n-1` data, `0xFFFD` complete, `0xFFFF` error), and `01/6A` asks for missing chunks.
+- **Routing.** `GmSession` passes every message that matches no pending request to a sink on `GlassLink`
+  (`onGmMessage`). That stream carries the uploads and also the acks of every posted frame. The sink only enqueues. The
+  capture runs on a caller IO thread and sends with `post`; the reader thread never writes or waits for a reply.
+- **Assembler.** `ScreenshotAssembler` validates the start metadata once (compression, bit depth, sizes, band layout),
+  stores chunks by index, and gives `Done`, `Resend` or `Failed`. It never throws on radio data. The idle deadline is
+  reset only by messages of the capture, because the HUD's acks reach the same inbox several times a second and would
+  otherwise never time out. The policy, not measured: 8 s idle timeout, up to 8 resend rounds of at most 64 chunks.
+- **Decoding.** The image is a 4-bit grayscale framebuffer compressed with LZ4, plain or in bands. `Lz4Block` is a
+  hand-written block decoder of about 40 lines: it decodes into an array of the known size and rejects any step that
+  would read or write out of range. A library would add native code to a module the PoC also builds, or (the stream
+  classes in commons-compress) know no output size. The image is cropped to its visible width and encoded as a
+  4-bit grayscale PNG by `toPng`, with `Deflater` and `CRC32`, so the 16 levels are kept exactly. `javax.imageio` does
+  not exist on Android and `android.graphics.Bitmap` does not exist in `glass-gm`, so the encoder is plain JVM and
+  tested on the host.
+- **Saving.** The PNG is inserted through `MediaStore` into `Pictures/voxwk` with `IS_PENDING`, and no permission is
+  needed (API 29 and later). The result is shown as a Toast. A capture on the device gave a 600 by 350 image with
+  the correct orientation.
+
+### SDK clone
+
+`third_party/plugin-open-platform` is not needed to build or run the app. It is used only by the codec cross-check test in
+`glass-gm`, which is skipped when the clone is absent.
+
+---
+
+## 8. Models
 
 Models are not bundled in the APK. They are downloaded into internal storage (`filesDir`) according to the manifest
 `android/app/src/main/assets/models.json`.
@@ -410,7 +593,7 @@ Internal storage is required: on some OEM builds a raw NDK `open()` on external 
 
 ---
 
-## 8. Persistence and settings
+## 9. Persistence and settings
 
 - **Sessions.** `data/SessionStore.kt` writes one JSON file per session at `filesDir/sessions/<id>.json`. There are few
   sessions and no schema is needed, so kotlinx.serialization JSON is used instead of a database. A turn stores the
@@ -421,6 +604,31 @@ Internal storage is required: on some OEM builds a raw NDK `open()` on external 
   `parseSettings`, the one place stored data is validated: an unknown or mistyped value falls back to its default. There
   is no migration code. Both stores are declared once at top level, so there is one DataStore per file per process
   however many repositories are created.
+  - The speech fields are `autoSpeak` (speak what I hear), `autoSpeakPartner` (speak what my partner hears) and
+    `speechRate` (what I hear only). `autoSpeak` kept its name and stored key from before the per-direction split, so
+    nothing needed migrating; a stored `autoSpeak = false` mutes only my direction, because `autoSpeakPartner` defaults
+    to true.
+  - The Glass fields are `glassEnabled`, `glassAddress` (validated at parse as six upper-case hex pairs separated by
+    colons), `glassMic` (`FRONT` or `ALL_AROUND`), `glassDisplay` (`SOURCE_AND_TRANSLATION` or `TRANSLATION_ONLY`) and
+    `glassShowMine`. A session snapshots them at start, so a change applies to the next session.
+- **Settings screen.** Settings is a list of categories; each row (a Material 3 `ListItem`) shows its title and one line
+  with the current value, and opens a page that is its own back-stack entry with the app bar and a back arrow
+  (`SettingsDetail(page)` in Navigation3). Every setting is on exactly one page.
+
+  | Page | Holds |
+  | --- | --- |
+  | Playback | the two speak switches and the speech rate |
+  | Recognition and translation | the Japanese recognizer and the translation model |
+  | Models | the model list and downloads |
+  | Online translation | provider, API key and its test |
+  | MemoMind Glass | Use Glass, the device, the microphone, the display mode and "Show what I say in Conversation" |
+  | Turn detection | the end-of-turn rules, the voice detection (only while SenseVoice is selected) and the online pause |
+  | About | the version and the system information |
+
+  Your language is a page too, but it is hidden while Japanese is the only choice. The pure pieces (`SettingsPage`, the
+  row summaries) are in `ui/settings/SettingsPages.kt` and the shared rows are in `SettingsComponents.kt`. The pages
+  share one `SettingsViewModel`, and the list and the Models and Glass pages refresh when the activity resumes.
+  `android:enableOnBackInvokedCallback` is on, so predictive back works app-wide.
 - **API keys.** `datastore/secrets.preferences_pb` holds only the ciphertexts. `SecureKeyStore` uses Tink AEAD
   (AES256-GCM), with its keyset in a private SharedPreferences file wrapped by a master key in the Android Keystore. A
   key that cannot be decrypted (a lost keyset, for example) reads as "no key" so the app asks for it again.
@@ -431,7 +639,7 @@ Internal storage is required: on some OEM builds a raw NDK `open()` on external 
 
 ---
 
-## 9. Build
+## 10. Build
 
 Every `.so` in `android/app/src/main/jniLibs/` is a build output or an upstream binary, so none is committed (the
 directory is git-ignored). Supported ABIs are `arm64-v8a` (devices) and `x86_64` (emulator). Gradle runs two kinds of
@@ -483,7 +691,7 @@ run `tools/gen-bindings.sh` and commit the result.
 
 ---
 
-## 10. Known limitations
+## 11. Known limitations
 
 - Offline recognition covers ja, en, fr, de, it, es, ru and `zh-hans`. A session that must recognize `zh-hant` needs
   Online mode, and with OpenAI a `zh-hant` target is not offered at all (use Gemini).
@@ -495,9 +703,29 @@ run `tools/gen-bindings.sh` and commit the result.
   (section 3).
 - Japanese accuracy of Nemotron streaming is lower than SenseVoice's.
 - Online Conversation connects two sessions at once, so billing can double.
-- Without earphones, the translation of the partner's speech is text only, because it must not play on the speaker.
+- Without earphones or a Glass, the translation of the partner's speech is text only, because it must not play on the
+  speaker.
 - While a translation plays on the speaker in Conversation, the mic is muted in both directions, so speech during
   playback is lost and an utterance in progress is cut off. Playback on earphones does not mute the mic.
-- Output routing (`MODE_IN_COMMUNICATION` plus `setCommunicationDevice`) is not verified on a device (section 6).
+- Output routing is verified on one phone only for the built-in speaker and the Glass, offline. Online playback and wired,
+  USB and Bluetooth earphone routing are not verified (section 6).
 - Turn splitting is heuristic (VAD parameters, endpoint rules, the idle gap), so it depends on the environment and
   speaking style.
+
+### MemoMind Glass
+
+- The Glass cannot be used together with the official MemoMind app, because the Glass cannot be shared (section 7).
+  While the official app has notification access it restarts itself after a force-stop and takes the Glass again.
+- Speech during Glass playback is not translated: the microphone is muted (the Glass hears its own speaker far above
+  speech), and the call-audio stream `0x93` does not carry usable speech. The mute covers the SCO-off and restart window
+  (800 ms).
+- The start of an utterance is occasionally lost: 1 of 21 turn heads in one device run. The cause is not known; it
+  may be an empty-endpoint reset just before speech onset (section 3).
+- Online speech always plays at 1.0x, so the speech rate setting does not apply online. Online playback on the Glass was
+  not tested.
+- Turning the Glass off during a session ends it, because the input sees the closed link (section 2). This path was
+  not tested on a device.
+- A second Bluetooth headset with SCO during a Glass session is treated as the Glass (section 7).
+- The All-around microphone mode was not tested. The Glass's own recording streams (`0x90`, `0x91`) are dropped.
+- Recovery after Glass playback occasionally takes longer than the 800 ms hold (one in 11), leaving a short window with
+  no audio.
