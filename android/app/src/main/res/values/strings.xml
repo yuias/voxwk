@@ -190,6 +190,10 @@
     <string name="settings_glass_mic_all_around">All-around microphone</string>
     <string name="settings_glass_display_translation">Translation only</string>
     <string name="settings_glass_display_both">Source and translation</string>
+    <string name="settings_glass_device">Device</string>
+    <string name="settings_glass_mic">Microphone</string>
+    <string name="settings_glass_display">Display</string>
+    <string name="settings_glass_show_mine">Show what I say in Conversation</string>
     <string name="settings_recognition">Recognition and translation</string>
     <string name="settings_turns">Turn detection</string>
     <string name="settings_summary_speak_both">For me (%1$sx) and my partner</string>

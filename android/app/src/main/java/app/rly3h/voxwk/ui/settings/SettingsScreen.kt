@@ -1,17 +1,13 @@
 package app.rly3h.voxwk.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -96,18 +92,8 @@ internal fun SettingsPageScreen(page: SettingsPage, modifier: Modifier = Modifie
     SettingsPage.RECOGNITION -> RecognitionPage(modifier, vm)
     SettingsPage.MODELS -> ModelsSection(modifier, vm)
     SettingsPage.ONLINE -> OnlinePage(modifier, vm)
-    SettingsPage.GLASS -> PaddedPage(modifier) { GlassSection(vm) }
+    SettingsPage.GLASS -> GlassSection(modifier, vm)
     SettingsPage.TURNS -> TurnDetectionPage(modifier, vm)
     SettingsPage.ABOUT -> AboutPage(modifier, vm)
   }
-}
-
-// The layout of a page that has not moved to the shared rows yet.
-@Composable
-private fun PaddedPage(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-  Column(
-    modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
-    content = content,
-  )
 }
