@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.annotation.RequiresPermission
+import app.rly3h.voxwk.glass.gm.GmMessage
 import app.rly3h.voxwk.glass.gm.GmSession
 import app.rly3h.voxwk.glass.gm.RecordingSession
 import java.io.Closeable
@@ -30,13 +31,21 @@ class GlassLink internal constructor(
   @Volatile
   var onAudio: ((stream: Int, packets: List<ByteArray>) -> Unit)? = null
 
+  /**
+   * Sink for GM messages that answer no pending request: screenshot uploads and the acks of posted frames. It runs
+   * on the gm reader thread, so it must only enqueue: sending or waiting there would block the thread that reads
+   * the replies. Messages that arrive while none is attached are dropped.
+   */
+  @Volatile
+  var onGmMessage: ((GmMessage) -> Unit)? = null
+
   /** True once either reader has ended (EOF or read error). */
   @Volatile
   var isClosed = false
     private set
 
   // Declared after the fields above: the reader threads start in the session constructors and may call back at once.
-  val gm = GmSession(cmdIn, cmdOut, onClosed = { isClosed = true })
+  val gm = GmSession(cmdIn, cmdOut, onUnsolicited = { onGmMessage?.invoke(it) }, onClosed = { isClosed = true })
   val recording = RecordingSession(
     recIn, recOut,
     onAudio = { stream, packets -> onAudio?.invoke(stream, packets) },
