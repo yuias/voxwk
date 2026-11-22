@@ -30,6 +30,7 @@ import androidx.navigation3.ui.NavDisplay
 import app.rly3h.voxwk.ui.history.HistoryDetailScreen
 import app.rly3h.voxwk.ui.history.SessionHistoryScreen
 import app.rly3h.voxwk.ui.session.NewSessionScreen
+import app.rly3h.voxwk.ui.settings.SettingsPageScreen
 import app.rly3h.voxwk.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
@@ -72,7 +73,7 @@ fun MainNavigation() {
         )
         NavigationDrawerItem(
           label = { Text(stringResource(R.string.nav_settings)) },
-          selected = current == SettingsKey,
+          selected = current == SettingsKey || current is SettingsDetail,
           onClick = { navigateTop(SettingsKey) },
           modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
         )
@@ -96,7 +97,12 @@ fun MainNavigation() {
           }
           entry<SettingsKey> {
             AppBarScaffold(stringResource(R.string.nav_settings), onMenu = { scope.launch { drawerState.open() } }) {
-              SettingsScreen(it)
+              SettingsScreen(onOpen = { page -> backStack.add(SettingsDetail(page)) }, modifier = it)
+            }
+          }
+          entry<SettingsDetail> { key ->
+            AppBarScaffold(stringResource(key.page.title), onBack = { backStack.removeLastOrNull() }) {
+              SettingsPageScreen(key.page, it)
             }
           }
           entry<HistoryDetail> { key ->

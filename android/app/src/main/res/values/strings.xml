@@ -205,6 +205,9 @@
     <string name="settings_summary_models_downloading">Downloading</string>
     <string name="settings_summary_models_missing">Download needed</string>
     <string name="settings_summary_models_ready">Ready</string>
+    <string name="settings_summary_join">%1$s · %2$s</string>
+    <string name="settings_summary_key_saved">Key saved</string>
+    <string name="settings_summary_key_none">No key</string>
     <string name="settings_summary_default">Default</string>
     <string name="settings_summary_custom">Custom</string>
     <string name="settings_about">About</string>
