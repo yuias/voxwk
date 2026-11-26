@@ -177,11 +177,12 @@ class RecordingSession(
 
     /**
      * Requests compact (40-byte) or legacy (49-byte) records. Returns the `52 13` response, or null when the firmware
-     * does not answer within [timeoutMs]; the parser then stays on legacy records, as old firmware expects.
+     * does not answer within [timeoutMs]. The parser keeps its current mode (legacy until the first `52 13`, as old
+     * firmware expects) and follows each reply, including one that arrives after the timeout; records still arriving
+     * from an earlier negotiation stay parseable meanwhile.
      */
     fun negotiate(compact: Boolean, timeoutMs: Long = 800): RecEvent.Control? {
         controls.clear()
-        parser.compact = false
         write(byteArrayOf(0x52, 0x12, if (compact) 1 else 0))
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {

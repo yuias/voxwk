@@ -112,8 +112,15 @@ class SessionTest {
         assertTrue(seen.any { !it.first })
     }
 
-    private fun recPeer(link: Link, answerNegotiate: Boolean, packets: List<ByteArray>) = Thread {
+    /** Fake recording peer; [beforeRenegotiateReply] is written ahead of the `52 13` reply of every negotiation after the first. */
+    private fun recPeer(
+        link: Link,
+        answerNegotiate: Boolean,
+        packets: List<ByteArray>,
+        beforeRenegotiateReply: List<ByteArray> = emptyList(),
+    ) = Thread {
         val cmd = ByteArray(3)
+        var negotiations = 0
         while (true) {
             var got = 0
             while (got < 3) {
@@ -122,7 +129,10 @@ class SessionTest {
                 got += n
             }
             when (cmd[1].toInt()) {
-                0x12 -> if (answerNegotiate) link.toPhone.write(byteArrayOf(0x52, 0x13, cmd[2], 0x31, 0x28, 0x00))
+                0x12 -> {
+                    if (++negotiations > 1) beforeRenegotiateReply.forEach { link.toPhone.write(it) }
+                    if (answerNegotiate) link.toPhone.write(byteArrayOf(0x52, 0x13, cmd[2], 0x31, 0x28, 0x00))
+                }
                 0x01 -> {
                     link.toPhone.write("52 11 00 01 02 03".unhex())
                     packets.forEach { link.toPhone.write(it) }
@@ -147,6 +157,24 @@ class SessionTest {
         }
         assertEquals(listOf(0x92, 0x90), got.map { it.first })
         opus.forEachIndexed { i, p -> assertArrayEquals(p, got[0].second[i]) }
+    }
+
+    @Test
+    fun renegotiationKeepsCompactModeWhileRecordsArrive() {
+        val link = Link()
+        val opus = List(2) { i -> ByteArray(40) { (i * 40 + it + 1).toByte() } }
+        fun record(p: ByteArray) = "52 92 00 00 09 FF 01 00 00 00 00 FF".unhex() + p
+        recPeer(link, answerNegotiate = true, packets = listOf(record(opus[0])), beforeRenegotiateReply = listOf(record(opus[1])))
+        val got = CopyOnWriteArrayList<ByteArray>()
+        RecordingSession(link.phoneIn, link.toGlasses, onAudio = { _, p -> got += p.single() }).use { r ->
+            assertEquals("52 13 01 31 28 00", r.negotiate(compact = true)!!.bytes.hex())
+            assertEquals("52 11 00 01 02 03", r.start()!!.bytes.hex())
+            // A restart while compact records are still arriving: the reply sits behind one more record.
+            assertEquals("52 13 01 31 28 00", r.negotiate(compact = true)!!.bytes.hex())
+            r.stop(drainMs = 200)
+        }
+        assertEquals(2, got.size)
+        opus.forEachIndexed { i, p -> assertArrayEquals(p, got[i]) }
     }
 
     @Test
