@@ -198,6 +198,7 @@ internal class OfflineTranslator(
         cb.onTurnUpdate(id, translation = "")
         cb.onStatus(EngineStatus.Failed(EngineStatus.Stage.TRANSLATION, e.message))
         cb.onTurnComplete(id)
+        cb.onPersist()
       }
       return
     }
