@@ -23,5 +23,7 @@ local.properties
 
 # Release signing configuration
 /android/keystore.properties
+*.jks
+*.keystore
 
 __pycache__/
