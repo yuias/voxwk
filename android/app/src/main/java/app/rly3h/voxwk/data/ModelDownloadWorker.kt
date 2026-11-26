@@ -12,6 +12,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.rly3h.voxwk.R
+import app.rly3h.voxwk.VoxwkApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -49,6 +50,7 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
           },
         )
       }
+      (applicationContext as VoxwkApp).preloader.refresh()
       Result.success()
     } catch (e: ModelCancelled) {
       Result.failure()

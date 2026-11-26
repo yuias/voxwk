@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.translatecore.asrLoad
@@ -61,11 +63,28 @@ internal class ModelPreloader(
   // finishes the previous run before it starts the next, so runs never overlap.
   private var loaded = emptySet<String>()
 
+  private val refreshes = MutableStateFlow(0)
+
   init {
     scope.launch {
-      settings.distinctUntilChangedBy { neededModels(it) }.collectLatest { sync(it) }
+      var seen = 0
+      combine(settings.distinctUntilChangedBy { neededModels(it) }, refreshes) { s, n -> s to n }
+        .collectLatest { (s, n) ->
+          if (n != seen) {
+            seen = n
+            loaded = emptySet()
+          }
+          sync(s)
+        }
     }
   }
+
+  /**
+   * Syncs again after a model was downloaded or deleted. Forgets what is loaded: a delete frees
+   * an engine without telling this class, and the native loads are no-ops for engines that are
+   * still resident.
+   */
+  fun refresh() = refreshes.update { it + 1 }
 
   private fun neededModels(s: AppSettings): List<String> = requiredModelIds(
     asrEnginesFor(s.sessionMode, s.listenSource, s.myLanguage, s.conversationPartner, s.jaRecognizer),

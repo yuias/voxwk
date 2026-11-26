@@ -13,6 +13,7 @@ import androidx.work.WorkInfo
 import app.rly3h.voxwk.BuildConfig
 import app.rly3h.voxwk.R
 import app.rly3h.voxwk.RecordingService
+import app.rly3h.voxwk.VoxwkApp
 import app.rly3h.voxwk.data.AppSettings
 import app.rly3h.voxwk.data.EndpointParams
 import app.rly3h.voxwk.data.GlassMic
@@ -256,6 +257,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
           unloadEngineFor(id)
           Models.delete(app, id)
         }
+        (app as VoxwkApp).preloader.refresh()
         readDisk()
         // delete() is best-effort and does not throw, so check what is left on disk.
         modelMessage = app.getString(
