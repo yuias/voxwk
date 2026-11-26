@@ -23,6 +23,21 @@ class TtsPlaybackLogicTest {
   }
 
   @Test
+  fun slowRateLengthensTheTimeout() {
+    assertEquals(7000L, utteranceTimeoutMs("a".repeat(10), 0.5f))
+  }
+
+  @Test
+  fun fastRateDoesNotShortenTheTimeout() {
+    assertEquals(3500L, utteranceTimeoutMs("a".repeat(10), 2.0f))
+  }
+
+  @Test
+  fun timeoutIsCappedAtSlowRate() {
+    assertEquals(60000L, utteranceTimeoutMs("a".repeat(1000), 0.5f))
+  }
+
+  @Test
   fun onlySpeakerAndGlassAreBusy() {
     assertTrue(isEchoBusy(ResolvedOutput.SPEAKER))
     assertTrue(isEchoBusy(ResolvedOutput.GLASS))

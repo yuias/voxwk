@@ -20,9 +20,15 @@ private const val UTTERANCE_BASE_TIMEOUT_MS = 2_000L
 private const val UTTERANCE_PER_CHAR_MS = 150L
 private const val UTTERANCE_MAX_TIMEOUT_MS = 60_000L
 
-/** Upper bound on how long to wait for the TTS engine to report completion of [text]. */
-internal fun utteranceTimeoutMs(text: String): Long =
-  minOf(UTTERANCE_BASE_TIMEOUT_MS + UTTERANCE_PER_CHAR_MS * text.length, UTTERANCE_MAX_TIMEOUT_MS)
+/**
+ * Upper bound on how long to wait for the TTS engine to report completion of [text] spoken at [rate]. Only a rate below
+ * 1 lengthens it: the per-character estimate is not measured against fast speech, so it is not shortened.
+ */
+internal fun utteranceTimeoutMs(text: String, rate: Float = 1f): Long =
+  minOf(
+    ((UTTERANCE_BASE_TIMEOUT_MS + UTTERANCE_PER_CHAR_MS * text.length) / minOf(rate, 1f)).toLong(),
+    UTTERANCE_MAX_TIMEOUT_MS,
+  )
 
 /** What the partner hears always plays at normal speed; only what I hear follows the setting. */
 internal fun playbackRate(audience: Audience, meRate: Float): Float = if (audience == Audience.ME) meRate else 1.0f
@@ -127,8 +133,9 @@ internal class TtsPlayback(
     val onSpeaker = isEchoBusy(output)
     if (onSpeaker) speakerBusy = true
     try {
-      tts.setSpeechRate(playbackRate(utterance.audience, speechRate()))
-      speakAndAwait(utterance.text)
+      val rate = playbackRate(utterance.audience, speechRate())
+      tts.setSpeechRate(rate)
+      speakAndAwait(utterance.text, rate)
       // Ending SCO now, before the tail, lets the Glass mic restart while the mic is still muted.
       if (output == ResolvedOutput.GLASS) router.releaseCommunicationDevice()
       if (onSpeaker && !closed) delay(echoTailMs(output))
@@ -137,7 +144,7 @@ internal class TtsPlayback(
     }
   }
 
-  private suspend fun speakAndAwait(text: String) {
+  private suspend fun speakAndAwait(text: String, rate: Float) {
     val id = "conv-${nextId.incrementAndGet()}"
     val done = CompletableDeferred<Unit>()
     // Registered before speak(): a fast engine can report completion before speak() returns.
@@ -145,7 +152,7 @@ internal class TtsPlayback(
     try {
       if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) return
       // Timing out means the engine never reported back; cut it off so it cannot talk over the next one.
-      if (withTimeoutOrNull(utteranceTimeoutMs(text)) { done.await() } == null) {
+      if (withTimeoutOrNull(utteranceTimeoutMs(text, rate)) { done.await() } == null) {
         runCatching { tts.stop() }
       }
     } catch (e: CancellationException) {
