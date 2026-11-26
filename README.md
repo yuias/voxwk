@@ -207,6 +207,8 @@ described above.
 - Online speech always plays at normal speed, and the speech rate setting does not apply to it. Online mode with the
   Glass was not tested on a device.
 - Turning the Glass off during a session ends the session. This was not tested on a device.
+- A Glass that stops sending audio ends the session after a few seconds. In online Listen the microphone failure is
+  only reported and recording continues until Stop.
 - The All-around microphone was not tested.
 - If a second Bluetooth headset is connected for calls during a Glass session, voxwk treats it as the Glass.
 

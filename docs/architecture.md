@@ -125,7 +125,12 @@ Opus decoder and the pickup mode; `purpose` and the preferred device of the form
 - **Restart after a stall.** When SCO ends the Glass stops recording and does not resume by itself. If no accepted
   packet arrives for 300 ms (`restartAfterMs`; packets normally arrive every 20 ms) the input negotiates and starts the
   recording again. Watching the stream instead of taking a signal from the router also covers SCO ending for other
-  reasons, such as a phone call.
+  reasons, such as a phone call. The record mode (compact or legacy) is kept while a restart negotiates: the parser
+  follows each negotiation reply, so records that are still arriving are parsed in the mode they were sent in.
+  Ten restarts with no accepted packet in between (`MAX_RESTARTS`, about 3.5 s of silence after the start was re-sent)
+  end the session with `IOException("Glass stopped sending audio")`; the worst recovery measured was 1.24 s. Every
+  accepted packet resets the count. Online Listen does not end: it only reports a microphone failure and keeps
+  recording until Stop.
 - **Pickup mode.** `GlassMic.FRONT` is mode 0 and `ALL_AROUND` is mode 1 (the documented 3-microphone mode). Only mode 0
   was tested.
 - A closed link while running throws an `IOException`, which ends the session.
@@ -228,7 +233,10 @@ The recognizers, the VAD and the translation model live in process-global Rust s
 - **Preloading.** `ModelPreloader` lives on the app scope and loads, in the background, what the current settings
   need (`requiredModelIds` over `asrEnginesFor`) as soon as the models are present. It reloads when the language,
   recognizer or translation model settings change and unloads engines that are no longer needed. The mic button shows
-  its progress. Starting a session before it finishes is allowed: translation waits on the engine mutex.
+  its progress. Starting a session before it finishes is allowed: translation waits on the engine mutex. It also runs
+  again after a model download finishes and after a delete (`ModelPreloader.refresh()`), so the first session after
+  either does not load lazily. The re-run forgets what it believes is loaded and syncs again; that is cheap because
+  every native load is idempotent for equal arguments, so an engine that is still resident returns at once.
 - **Session start** also frees the recognizers the session does not use (`releaseUnusedEngines`), and **deleting a
   model** unloads its engine first because the GGUF is memory-mapped and the ONNX engines keep their files open.
 
@@ -238,6 +246,11 @@ Speech uses the OS TTS engine (`Locale` plus `setSpeechRate`). The OS handles gr
 Japanese, so no on-device TTS model is shipped. Android 11 and later need a `<queries>` entry for `TTS_SERVICE`, which
 the manifest has. If the OS has no voice for the target language the translation is shown as text only: Listen reports
 `EngineStatus.NoTtsVoice`, and Conversation skips the utterance without switching the route or muting the mic.
+
+`TtsPlayback` (Conversation, and Listen with a Glass) waits for the engine's completion callback before it releases the
+route, and it cuts the utterance off if the callback never comes. That wait is estimated from the text length (2 s
+plus 150 ms per character). It grows as 1/rate when the speech rate is below 1x, stays at the 1x estimate above 1x
+because the per-character figure is not measured against fast speech, and is capped at 60 s. The partner's speech is always 1x, so it is never scaled.
 
 ---
 
@@ -598,7 +611,9 @@ Internal storage is required: on some OEM builds a raw NDK `open()` on external 
 - **Sessions.** `data/SessionStore.kt` writes one JSON file per session at `filesDir/sessions/<id>.json`. There are few
   sessions and no schema is needed, so kotlinx.serialization JSON is used instead of a database. A turn stores the
   transcript, source and target codes, the ASR tag, the translation, the speaker and the start time. A corrupt file is
-  skipped when listing.
+  skipped when listing. The session is rewritten whenever an engine reports `onPersist`, and every turn that has a
+  translation is saved. A turn whose translation failed completes with an empty translation and is saved like any
+  other, including as the last turn of a session (offline path).
 - **Settings.** `data/SettingsRepository.kt` keeps `AppSettings` in a Preferences DataStore
   (`datastore/settings.preferences_pb`) and exposes a `Flow<AppSettings>`. Parsing is the pure function
   `parseSettings`, the one place stored data is validated: an unknown or mistyped value falls back to its default. There
