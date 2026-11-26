@@ -63,16 +63,20 @@ class GlassAudioInput(
 
       val restartAfterNs = TimeUnit.MILLISECONDS.toNanos(restartAfterMs)
       var lastPacketNs = System.nanoTime()
+      var restarts = 0
       while (running.get()) {
         if (link.isClosed) throw IOException("Glass link closed")
         val packet = packets.poll(POLL_MS, TimeUnit.MILLISECONDS)
         if (packet != null) {
           lastPacketNs = System.nanoTime()
+          restarts = 0
           rechunker.add(decode(packet)) { emit(if (upsample) linearResample16to24(it) else it) }
         } else if (System.nanoTime() - lastPacketNs >= restartAfterNs) {
           // When SCO ends the Glass stops recording and does not resume by itself, whoever ended SCO (measured: 0x92
           // did not return within 10 s after SCO ended; resending start restored it). Watching the stream covers every
           // cause.
+          if (restarts == MAX_RESTARTS) throw IOException("Glass stopped sending audio")
+          restarts++
           link.recording.negotiate(compact = true)
           link.recording.start()
           lastPacketNs = System.nanoTime()
@@ -93,5 +97,9 @@ class GlassAudioInput(
 
   private companion object {
     const val POLL_MS = 50L
+
+    // A restart cycle is ~300 ms plus the round trips, so 10 cycles are ~3.5 s of silence; the worst measured
+    // recovery is 1.24 s.
+    const val MAX_RESTARTS = 10
   }
 }

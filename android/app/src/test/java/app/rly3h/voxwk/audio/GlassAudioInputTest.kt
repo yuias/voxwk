@@ -182,6 +182,22 @@ class GlassAudioInputTest {
   }
 
   @Test
+  fun captureThrowsWhenTheGlassStaysSilentThroughTheRestartLimit() {
+    val glass = FakeGlass()
+    val input = GlassAudioInput(glass.link, ::fakeDecode, pickupMode = 0, restartAfterMs = 50)
+    val capture = Capture(input, format100)
+    try {
+      val error = capture.done.get(TIMEOUT_S, TimeUnit.SECONDS)
+      assertTrue(error.toString(), error is IOException)
+      assertEquals("Glass stopped sending audio", error!!.message)
+      // The first start and 10 restarts; the 11th stall ends the capture instead of starting again.
+      assertEquals(11, glass.recLog.count { it == "52 01 00" })
+    } finally {
+      glass.link.close()
+    }
+  }
+
+  @Test
   fun captureThrowsWhenTheRecordingLinkCloses() {
     val glass = FakeGlass(closeRecAfterStart = true)
     val input = GlassAudioInput(glass.link, ::fakeDecode, pickupMode = 0, restartAfterMs = 200)
